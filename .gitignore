@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+.eggs/
+
+# Локальные данные приложения (не в репозиторий)
+protocols.db
+last_protocol_no.json
+Data_base.xlsx
+
+# Черновики / тестовые docx (шаблон — default_protocol.docx)
+123*.docx
+_t.docx
+
+# Опционально: свои Excel и черновики (раскомментируйте при необходимости)
+# *.xlsx
+# *.docx
+# !_docx_extract/
+# !_docx_extract_progV/
+
+# IDE / ОС
+.cursor/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+desktop.ini
+~$*
+
+# Вспомогательные распаковки docx (при необходимости уберите из .gitignore)
+_docx_extract/
+_docx_extract_progV/

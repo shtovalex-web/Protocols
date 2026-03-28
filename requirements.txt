@@ -1,0 +1,6 @@
+openpyxl
+python-docx
+fpdf
+# Родительный падеж для ФИО/должностей комиссии в протоколе (рекомендуется):
+pymorphy2
+pymorphy2-dicts-ru
