@@ -25,7 +25,8 @@ _t.docx
 # IDE / ОС
 .cursor/
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 *.swp
 .DS_Store
 desktop.ini
