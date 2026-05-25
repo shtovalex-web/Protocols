@@ -92,16 +92,16 @@ def main() -> int:
         check=True,
     ).stdout.strip() or "main"
 
-    if not args.push_only and not args.no_pull:
-        _run(["git", "pull", "--rebase", "origin", branch], check=False)
-
     if args.pull_only:
-        return 0
+        return _run(["git", "pull", "--rebase", "origin", branch], check=True)
 
     if args.push_only:
         return _run(["git", "push", "origin", branch], check=True)
 
     _run(["git", "add", "-A"])
+
+    if not args.no_pull:
+        _run(["git", "pull", "--rebase", "origin", branch], check=False)
     if not _has_changes_to_commit():
         print("Нет изменений для коммита — только push.")
         return _run(["git", "push", "origin", branch], check=True)
