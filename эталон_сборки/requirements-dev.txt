@@ -1,0 +1,6 @@
+# Опционально: локальные проверки качества и безопасности
+#   py -m pip install -r requirements-dev.txt
+#   py -m ruff check .
+#   py -m bandit -r ProtocolOHT_next main.py app_paths.py -ll
+ruff>=0.8.0
+bandit>=1.7.0

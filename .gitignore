@@ -11,6 +11,8 @@ venv/
 protocols.db
 last_protocol_no.json
 Data_base.xlsx
+Programs_base.xlsx
+protocol_errors_journal.txt
 
 # Черновики / тестовые docx (шаблон — default_protocol.docx)
 123*.docx
@@ -21,6 +23,23 @@ _t.docx
 # *.docx
 # !_docx_extract/
 # !_docx_extract_progV/
+
+# Сборка PyInstaller
+_pyinstaller_build/
+_pyinstaller_build_onefile/
+ProtocolOHT_app/
+ProtocolOHT_onefile/
+ProtocolOOT.spec
+
+# Пакеты для ИБ / локальная упаковка (не в репозиторий)
+ib_*/
+ib_*.zip
+
+# Сгенерированные протоколы пользователя
+Protokol/
+
+# Черновики и локальные копии (не в репозиторий)
+local/
 
 # IDE / ОС
 .cursor/

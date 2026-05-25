@@ -1,0 +1,11 @@
+#!/bin/sh
+# После локального commit — отправить на GitHub (origin).
+branch=$(git branch --show-current 2>/dev/null)
+if [ -z "$branch" ]; then
+  exit 0
+fi
+if ! git remote get-url origin >/dev/null 2>&1; then
+  exit 0
+fi
+echo "[githook] push origin $branch ..."
+git push origin "$branch" || echo "[githook] push не выполнен — запустите sync_github.bat"

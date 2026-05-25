@@ -1,0 +1,21 @@
+Эталонная копия программы «формирование протоколов» (резервная сборка)
+
+Состав: модули .py из корня, README.md, requirements*, каталог data/ (шаблоны, FAQ.txt, XSD),
+в корне — Data_base.xlsx и Programs_base.xlsx (как после сборки .exe).
+
+В репозитории шаблоны лежат в bundle/; update_etalon копирует комплект в data/.
+
+На новом ПК:
+1) Установите Python 3 с официального сайта (с компонентом tkinter).
+2) Запустите установка_зависимостей.bat или вручную:
+   py -3 -m pip install -r requirements.txt
+3) Для PDF как в документе Word: установите Microsoft Word и выполните
+   py -3 -m pip install pywin32
+4) Запуск: запуск.bat или команда  py -3 main.py  из этой папки.
+
+База protocols.db и файл last_protocol_no.json создаются при работе сами.
+Папки Protokol и Mintrud создаются программой рядом с main.py.
+
+Обновление эталона: update_etalon.bat или  py -3 tools/update_etalon.py
+
+Источник правды — корень репозитория, ProtocolOHT_next и bundle/; эталон пересобирается скриптом.

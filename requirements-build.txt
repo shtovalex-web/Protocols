@@ -1,0 +1,4 @@
+pyinstaller>=6.0
+# Перед PyInstaller: build_windows_exe.py запускает ruff (см. ruff.toml).
+ruff>=0.8.0
+# При отсутствии колёс под вашу версию Python — попробуйте pyinstaller без ограничения версии.
