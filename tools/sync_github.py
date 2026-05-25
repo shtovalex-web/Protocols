@@ -38,6 +38,12 @@ def _has_remote() -> bool:
     return r.returncode == 0
 
 
+def _working_tree_clean() -> bool:
+    r1 = subprocess.run(["git", "diff", "--quiet"], cwd=str(ROOT))
+    r2 = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=str(ROOT))
+    return r1.returncode == 0 and r2.returncode == 0
+
+
 def _has_changes_to_commit() -> bool:
     r = subprocess.run(
         ["git", "diff", "--cached", "--quiet"],
@@ -98,10 +104,10 @@ def main() -> int:
     if args.push_only:
         return _run(["git", "push", "origin", branch], check=True)
 
-    _run(["git", "add", "-A"])
-
-    if not args.no_pull:
+    if not args.no_pull and _working_tree_clean():
         _run(["git", "pull", "--rebase", "origin", branch], check=False)
+
+    _run(["git", "add", "-A"])
     if not _has_changes_to_commit():
         print("Нет изменений для коммита — только push.")
         return _run(["git", "push", "origin", branch], check=True)
@@ -111,6 +117,10 @@ def main() -> int:
         msg = f"Синхронизация {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
     _run(["git", "commit", "-m", msg])
+
+    if not args.no_pull:
+        _run(["git", "pull", "--rebase", "origin", branch], check=False)
+
     return _run(["git", "push", "origin", branch], check=True)
 
 
