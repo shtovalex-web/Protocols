@@ -723,11 +723,24 @@ def listbox_label_for_employee(
     return rec.fio
 
 
-def listbox_subdivision_header(subdivision: str, employee_count: int) -> str:
-    """Заголовок группы в списке сотрудников (не выбирается)."""
+def subdivision_group_key(subdivision: str) -> str:
+    """Ключ группы подразделения для сворачивания списка в интерфейсе."""
+    s = (subdivision or "").strip().lower().replace("ё", "е")
+    return s if s else "__no_sub__"
+
+
+def listbox_subdivision_header(
+    subdivision: str,
+    employee_count: int,
+    *,
+    collapsed: bool = False,
+) -> str:
+    """Заголовок группы в списке сотрудников (клик — свернуть/развернуть)."""
     sub = (subdivision or "").strip() or "(без подразделения)"
     n = max(0, int(employee_count))
-    return f"▸ {sub}  ({n})"
+    mark = "▸" if collapsed else "▾"
+    hint = " — свернуто, щёлкните чтобы развернуть" if collapsed else ""
+    return f"{mark} {sub}  ({n}){hint}"
 
 
 def employee_unique_key(rec: EmployeeRecord) -> str:

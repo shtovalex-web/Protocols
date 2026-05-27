@@ -171,6 +171,78 @@ def format_journal_list_line(r: dict[str, Any]) -> str:
     return f"№ {pn:<14}  {dt}  {gr}  |  {fio}  |  {top}  |  id={tid}  {ca}"
 
 
+def _split_multi_fio_text(fio_field: str) -> list[str]:
+    """Несколько ФИО в одной строке журнала (через запятую или «;»)."""
+    t = (fio_field or "").strip()
+    if not t:
+        return []
+    if "," not in t and ";" not in t:
+        return [t]
+    parts = [p.strip() for p in re.split(r"[,;]", t) if p.strip()]
+    return parts if parts else [t]
+
+
+def person_fios_from_journal_row(r: dict[str, Any]) -> list[str]:
+    """
+    Список ФИО по записи журнала: из export_meta_json (persons_raw) или разбор поля fio.
+    """
+    meta = r.get("export_meta_json")
+    if meta:
+        try:
+            data = json.loads(meta)
+            raw = data.get("persons_raw")
+            if isinstance(raw, list) and raw:
+                out: list[str] = []
+                seen: set[str] = set()
+                for item in raw:
+                    if not isinstance(item, dict):
+                        continue
+                    f = (item.get("fio") or "").strip()
+                    if not f:
+                        continue
+                    k = _norm_fio_journal_key(f)
+                    if k in seen:
+                        continue
+                    seen.add(k)
+                    out.append(f)
+                if out:
+                    return out
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            pass
+    single = (r.get("fio") or "").strip()
+    if not single:
+        return []
+    split = _split_multi_fio_text(single)
+    deduped: list[str] = []
+    seen2: set[str] = set()
+    for f in split:
+        k = _norm_fio_journal_key(f)
+        if k not in seen2:
+            seen2.add(k)
+            deduped.append(f)
+    return deduped
+
+
+def expand_journal_rows_for_registry_export(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Запись журнала на нескольких человек — по одной строке реестра на каждое ФИО
+    (охрана труда и тех. протоколы).
+    """
+    expanded: list[dict[str, Any]] = []
+    for r in rows:
+        fios = person_fios_from_journal_row(r)
+        if len(fios) <= 1:
+            expanded.append(r)
+            continue
+        for fio in fios:
+            row_copy = dict(r)
+            row_copy["fio"] = fio
+            expanded.append(row_copy)
+    return expanded
+
+
 def journal_row_registry_fields(r: dict[str, Any]) -> dict[str, str]:
     """Поля одной записи для выгрузки реестра в Excel/CSV."""
     return {
@@ -209,10 +281,14 @@ def default_journal_registry_export_path(
 def export_protocol_journal_registry(
     path: Path,
     rows: list[dict[str, Any]],
-) -> None:
-    """Выгрузка реестра сформированных протоколов в .xlsx (или .csv при отсутствии openpyxl)."""
+) -> int:
+    """
+    Выгрузка реестра сформированных протоколов в .xlsx (или .csv при отсутствии openpyxl).
+    Возвращает число строк в файле (после разбивки записей на несколько ФИО).
+    """
     path = Path(path)
-    fields_rows = [journal_row_registry_fields(r) for r in rows]
+    export_rows = expand_journal_rows_for_registry_export(rows)
+    fields_rows = [journal_row_registry_fields(r) for r in export_rows]
     keys = [k for k, _ in _REGISTRY_COLUMNS]
     headers = [h for _, h in _REGISTRY_COLUMNS]
 
@@ -223,7 +299,7 @@ def export_protocol_journal_registry(
             w.writerow(headers)
             for fr in fields_rows:
                 w.writerow([fr.get(k, "") for k in keys])
-        return
+        return len(fields_rows)
 
     try:
         from openpyxl import Workbook
@@ -258,6 +334,7 @@ def export_protocol_journal_registry(
                 max_len = max(max_len, len(str(v)))
         ws.column_dimensions[letter].width = min(max_len + 2, 60)
     wb.save(path)
+    return len(fields_rows)
 
 
 def _export_meta_protocol_no_value(meta_json: str | None) -> str:

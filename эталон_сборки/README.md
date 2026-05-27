@@ -98,6 +98,30 @@ py -3 build_windows_exe.py
 | `russian_genitive.py` | Родительный падеж для ФИО/должностей. |
 | `faq_viewer.py` | Окно справки по `FAQ.txt` / `FAQ.md` в комплекте (`data/` или `bundle/`). |
 
+## GitHub: синхронизация изменений
+
+Репозиторий: `https://github.com/shtovalex-web/Protocols.git` (ветка `main`).
+
+**Ручная синхронизация** (pull → commit → push):
+
+```bash
+py -3 tools/sync_github.py -m "описание изменений"
+```
+
+Или **`sync_github.bat`** в корне проекта.
+
+**Автоматический push после каждого локального commit** (один раз на этом ПК):
+
+```bash
+setup_git_hooks.bat
+```
+
+После этого каждый `git commit` вызывает `git push origin <ветка>`. При сбое сети повторите `sync_github.bat`.
+
+На GitHub при push/pull request запускается проверка `tools/verify_project.py --no-launch` (см. `.github/workflows/verify.yml`).
+
+Подробнее: `docs/GITHUB_SYNC.md`.
+
 ## Разработчик
 
 Сведения для пользователей задаются в начале `main.py` рядом с `APP_WINDOW_TITLE`:

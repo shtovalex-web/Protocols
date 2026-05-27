@@ -25,6 +25,7 @@ from docx.text.paragraph import Paragraph as DocxParagraph
 from docx.text.run import Run as DocxRun
 
 from app_paths import application_bundle_dir
+from docx_template_protection import save_formed_protocol_docx
 from commission_admin import (
     COMMISSION_KIND_OT,
     COMMISSION_KIND_TECH,
@@ -345,7 +346,8 @@ C — наименование в маркированном списке пос
   • {{ПОДРАЗДЕЛЕНИЕ_ПРОВЕРКИ}}, {{УТВЕРДИЛ_ПРИКАЗ}} — см. п. 2а
 
 Защита стандартных шаблонов (админка): режим «только чтение» в Word для default_protocol*.docx
-в папке программы; сформированные протоколы не защищаются. Снятие — «Снять защиту (для правки)…».
+в папке программы; при сохранении сформированного протокола защита Word снимается автоматически.
+Снятие на шаблонах — «Снять защиту (для правки)…».
   • абзац о комиссии по приказу          — см. п. 2а ( от, №, председателя, членов)
   • длинная строка _____ … ,             — тема в шапке (см. п. 3)
   • в таблице .docx: см. п. 5
@@ -708,6 +710,176 @@ def _collect_unique_professions_ordered(persons: list[EmployeeRecord]) -> list[s
     return out
 
 
+def _append_profession_ordered(out: list[str], seen: set[str], text: str) -> None:
+    t = (text or "").strip()
+    if not t:
+        return
+    k = _norm_profession_key(t)
+    if k in seen:
+        return
+    seen.add(k)
+    out.append(t)
+
+
+def employee_fio_key(emp: EmployeeRecord) -> str:
+    return _norm_profession_key(emp.fio or "")
+
+
+def face_sheet_profession_for_employee(
+    emp: EmployeeRecord,
+    *,
+    face_sheet_profession: str | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
+) -> str:
+    """Основная должность для строки протокола: из диалога по ФИО или с лицевой части формы."""
+    if v_prof_main_by_fio:
+        main = (v_prof_main_by_fio.get(employee_fio_key(emp)) or "").strip()
+        if main:
+            return main
+    return (face_sheet_profession or "").strip() or (emp.profession or "").strip()
+
+
+def collect_professions_for_v_prof_lookup(
+    *,
+    face_sheet_profession: str | None = None,
+    emp: EmployeeRecord | None = None,
+    persons_merged: list[EmployeeRecord] | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
+) -> list[str]:
+    """
+    Должности для поиска в V_PROF: основная по сотруднику, затем отмеченные совмещения.
+    v_prof_enabled_by_fio — отметки из диалога отдельно по каждому ФИО.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    emp_fio = employee_fio_key(emp) if emp is not None else ""
+    enabled_for_emp = (
+        v_prof_enabled_by_fio.get(emp_fio) if v_prof_enabled_by_fio and emp_fio else None
+    )
+
+    def allowed(pr: str) -> bool:
+        t = (pr or "").strip()
+        if not t:
+            return False
+        pk = _norm_profession_key(t)
+        if enabled_for_emp is not None:
+            return pk in enabled_for_emp
+        if v_prof_enabled_norm_keys is not None:
+            return pk in v_prof_enabled_norm_keys
+        return True
+
+    def add(pr: str) -> None:
+        if allowed(pr):
+            _append_profession_ordered(out, seen, pr)
+
+    if emp is not None and v_prof_main_by_fio:
+        add(face_sheet_profession_for_employee(
+            emp,
+            face_sheet_profession=face_sheet_profession,
+            v_prof_main_by_fio=v_prof_main_by_fio,
+        ))
+    else:
+        fs = (face_sheet_profession or "").strip()
+        if fs:
+            add(fs)
+    if emp is not None:
+        if not (v_prof_main_by_fio and emp_fio in v_prof_main_by_fio):
+            if not (face_sheet_profession or "").strip():
+                add(emp.profession)
+        add(emp.profession2)
+        if persons_row_source:
+            for r in raw_employee_rows_same_fio_as(persons_row_source, emp):
+                add(r.profession)
+                add(r.profession2)
+    elif v_prof_enabled_by_fio and persons_row_source:
+        for fio_key, _fio, profs in _professions_by_fio_from_records(persons_row_source):
+            enabled_set = v_prof_enabled_by_fio.get(fio_key)
+            main = (v_prof_main_by_fio or {}).get(fio_key, "").strip() if v_prof_main_by_fio else ""
+            if main:
+                add(main)
+            for pr in profs:
+                if enabled_set is None or _norm_profession_key(pr) in enabled_set:
+                    add(pr)
+        return out
+    if persons_merged:
+        for p in persons_merged:
+            add(p.profession)
+            add(p.profession2)
+    if persons_row_source:
+        for r in persons_row_source:
+            add(r.profession)
+            add(r.profession2)
+    return out
+
+
+def _professions_by_fio_from_records(
+    records: list[EmployeeRecord],
+) -> list[tuple[str, str, list[str]]]:
+    from v_prof_combinations import professions_by_fio
+
+    return professions_by_fio(records)
+
+
+def professions_for_v_prof_matrix_lookup(
+    persons_raw: list[EmployeeRecord],
+    *,
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
+) -> list[str]:
+    """
+    Должности для поиска строки в V_PROF (столбец A) — объединение по всем выбранным сотрудникам.
+    """
+    if v_prof_enabled_by_fio and persons_row_source:
+        return collect_professions_for_v_prof_lookup(
+            persons_row_source=persons_row_source,
+            v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+            v_prof_main_by_fio=v_prof_main_by_fio,
+        )
+    fs = (face_sheet_profession or "").strip()
+    if (
+        fs
+        or persons_row_source
+        or v_prof_enabled_norm_keys is not None
+    ):
+        return collect_professions_for_v_prof_lookup(
+            face_sheet_profession=face_sheet_profession,
+            persons_merged=persons_raw,
+            persons_row_source=persons_row_source,
+            v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+            v_prof_main_by_fio=v_prof_main_by_fio,
+        )
+    return _collect_unique_professions_ordered(persons_raw)
+
+
+def employee_with_face_sheet_profession(
+    emp: EmployeeRecord,
+    *,
+    face_sheet_profession: str | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
+) -> EmployeeRecord:
+    """Для реестра: основная должность этого сотрудника (из диалога или лицевой части)."""
+    fs = face_sheet_profession_for_employee(
+        emp,
+        face_sheet_profession=face_sheet_profession,
+        v_prof_main_by_fio=v_prof_main_by_fio,
+    )
+    if not fs or fs == (emp.profession or "").strip():
+        return emp
+    return EmployeeRecord(
+        fio=emp.fio,
+        profession=fs,
+        subdivision=emp.subdivision,
+        profession2=emp.profession2,
+        snils=emp.snils,
+    )
+
+
 def _select_best_row_by_profession_col_a(
     path: Path,
     profession: str,
@@ -831,6 +1003,12 @@ def build_fg_lines_for_selected_programs(
     path: Path,
     program_keys: list[str],
     persons_raw: list[EmployeeRecord],
+    *,
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> list[str]:
     """
     V_PROF, столбец A — должность; для «Б»/PP/СИЗ — ячейки столбцов 2–4 (якорь после проверки).
@@ -839,7 +1017,14 @@ def build_fg_lines_for_selected_programs(
     persons_raw — список записей с теми же должностями, что должны попасть в шапку/якоря; для «Б» это
     развёрнутые строки блока «Б» (expand_persons_block_b_rows), а не объединение по ФИО.
     """
-    profs = _collect_unique_professions_ordered(persons_raw)
+    profs = professions_for_v_prof_matrix_lookup(
+        persons_raw,
+        face_sheet_profession=face_sheet_profession,
+        persons_row_source=persons_row_source,
+        v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+        v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+        v_prof_main_by_fio=v_prof_main_by_fio,
+    )
     if not profs or not program_keys:
         return []
     layout = v_prof_layout_for_path(path)
@@ -1217,33 +1402,61 @@ def raw_employee_rows_same_fio_as(
     return out if out else [emp]
 
 
-def v_program_merged_parts_for_raw_employee(path: Path, emp: EmployeeRecord) -> list[str]:
+def v_program_merged_parts_for_raw_employee(
+    path: Path,
+    emp: EmployeeRecord,
+    *,
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
+) -> list[str]:
     """
-    Все фрагменты V_PROF для сотрудника из исходной записи Excel: основная + совмещаемая
-    должность без повторов по тексту (порядок: сначала основная строка V_PROF, затем уникальное из второй).
+    Все фрагменты V_PROF для сотрудника: основная с лицевой части + совмещения из выбранных строк.
     """
-    primary = read_v_prof_row_parts_list(path, emp.profession)
-    seen = {_norm_profession_key(x) for x in primary}
-    out = list(primary)
-    p2 = (emp.profession2 or "").strip()
-    if not p2:
-        return out
-    for x in read_v_prof_row_parts_list(path, p2):
-        nk = _norm_profession_key(x)
-        if nk not in seen:
-            seen.add(nk)
-            out.append(x)
+    profs = collect_professions_for_v_prof_lookup(
+        face_sheet_profession=face_sheet_profession,
+        emp=emp,
+        persons_row_source=persons_row_source,
+        v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+        v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+        v_prof_main_by_fio=v_prof_main_by_fio,
+    )
+    seen: set[str] = set()
+    out: list[str] = []
+    for pr in profs:
+        for x in read_v_prof_row_parts_list(path, pr):
+            nk = _norm_profession_key(x)
+            if nk not in seen:
+                seen.add(nk)
+                out.append(x)
     return out
 
 
 def v_program_ordered_unique_parts_global(
-    path: Path, persons_raw: list[EmployeeRecord],
+    path: Path,
+    persons_raw: list[EmployeeRecord],
+    *,
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> list[str]:
-    """Уникальные фрагменты программы «В» по всем выбранным сотрудникам (порядок сохраняется)."""
+    """Уникальные фрагменты программы «В» (порядок сохраняется)."""
     seen: set[str] = set()
     ordered: list[str] = []
     for emp in persons_raw:
-        for part in v_program_merged_parts_for_raw_employee(path, emp):
+        for part in v_program_merged_parts_for_raw_employee(
+            path,
+            emp,
+            face_sheet_profession=face_sheet_profession,
+            persons_row_source=persons_row_source,
+            v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+            v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+            v_prof_main_by_fio=v_prof_main_by_fio,
+        ):
             nk = _norm_profession_key(part)
             if nk not in seen:
                 seen.add(nk)
@@ -1252,10 +1465,26 @@ def v_program_ordered_unique_parts_global(
 
 
 def resolve_v_program_inner_text_global(
-    path: Path, persons_raw: list[EmployeeRecord], fallback: str
+    path: Path,
+    persons_raw: list[EmployeeRecord],
+    fallback: str,
+    *,
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> str:
     """Один объединённый текст фрагментов В по всем выбранным сотрудникам (без повторов)."""
-    parts = v_program_ordered_unique_parts_global(path, persons_raw)
+    parts = v_program_ordered_unique_parts_global(
+        path,
+        persons_raw,
+        face_sheet_profession=face_sheet_profession,
+        persons_row_source=persons_row_source,
+        v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+        v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+        v_prof_main_by_fio=v_prof_main_by_fio,
+    )
     return ", ".join(parts) if parts else fallback
 
 
@@ -1402,6 +1631,12 @@ def build_protocol_header_theme_text(
     program_keys: list[str],
     program_titles: list[str],
     persons_for_v_prof: list[EmployeeRecord],
+    *,
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> str:
     """
     Текст шапки протокола (абзац с «__» под номером):
@@ -1416,7 +1651,14 @@ def build_protocol_header_theme_text(
         return "; ".join(t for t in clean_titles if t)
 
     layout = v_prof_layout_for_path(path)
-    profs = _collect_unique_professions_ordered(persons_for_v_prof)
+    profs = professions_for_v_prof_matrix_lookup(
+        persons_for_v_prof,
+        face_sheet_profession=face_sheet_profession,
+        persons_row_source=persons_row_source,
+        v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+        v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+        v_prof_main_by_fio=v_prof_main_by_fio,
+    )
     if not profs:
         return "; ".join(t for t in clean_titles if t)
 
@@ -1487,9 +1729,18 @@ def build_protocol_header_theme_text(
     return "; ".join(theme_parts).strip()
 
 
-def _profession_cell_primary_only(emp: EmployeeRecord) -> str:
-    """Только основная должность (совмещение в таблице не дублируется второй строкой)."""
-    return (emp.profession or "").strip()
+def _profession_cell_primary_only(
+    emp: EmployeeRecord,
+    *,
+    face_sheet_profession: str | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
+) -> str:
+    """Основная должность в графе таблицы для этого сотрудника."""
+    return face_sheet_profession_for_employee(
+        emp,
+        face_sheet_profession=face_sheet_profession,
+        v_prof_main_by_fio=v_prof_main_by_fio,
+    )
 
 
 def _rebuild_registry_rows_for_program(pkey: str, emp: EmployeeRecord) -> int:
@@ -2473,6 +2724,11 @@ def _rebuild_protocol_result_table(
     trained_registry_index: TrainedRegistryIndex | None = None,
     protocol_no_for_registry: str = "",
     date_str_for_registry: str = "",
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> tuple[int, int]:
     """
     Удаляет строки таблицы ниже шапки (две первые строки-заголовка) и строит заново:
@@ -2535,7 +2791,20 @@ def _rebuild_protocol_result_table(
                 v_fb = _protocol_program_fallback_title("V")
                 for j in range(n_block):
                     p = block_rows[j]
-                    v_parts = v_program_merged_parts_for_raw_employee(v_path, p)
+                    p_lookup = employee_with_face_sheet_profession(
+                        p,
+                        face_sheet_profession=face_sheet_profession,
+                        v_prof_main_by_fio=v_prof_main_by_fio,
+                    )
+                    v_parts = v_program_merged_parts_for_raw_employee(
+                        v_path,
+                        p,
+                        face_sheet_profession=face_sheet_profession,
+                        persons_row_source=persons_row_source,
+                        v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+                        v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+                        v_prof_main_by_fio=v_prof_main_by_fio,
+                    )
                     _, v_hints = v_fragment_labels_and_hints(v_parts)
                     sub_title = format_v_program_table_block_title(v_parts, v_fb)
                     h_person = _v_person_training_hours_sum(v_parts, v_reg_rows_cached)
@@ -2553,12 +2822,16 @@ def _rebuild_protocol_result_table(
                     row = table.rows[-1]
                     row.cells[0].text = f"{pi}.{j + 1}"
                     row.cells[1].text = p.fio
-                    row.cells[2].text = _profession_cell_primary_only(p)
+                    row.cells[2].text = _profession_cell_primary_only(
+                        p,
+                        face_sheet_profession=face_sheet_profession,
+                        v_prof_main_by_fio=v_prof_main_by_fio,
+                    )
                     row.cells[3].text = p.subdivision
                     v_file: list[str] | None = None
                     if idx is not None:
                         cand_all = idx.candidates_for_employee(
-                            p,
+                            p_lookup,
                             protocol_queries,
                             apply_profession_filter_for_registry=False,
                         )
@@ -2566,7 +2839,7 @@ def _rebuild_protocol_result_table(
                         v_file = idx.registry_numbers_for_hints(
                             cand_v,
                             v_hints,
-                            emp=p,
+                            emp=p_lookup,
                             require_profession_for_registry=False,
                         )
                     row.cells[4].text = _format_v_result_cell(
@@ -2610,8 +2883,13 @@ def _rebuild_protocol_result_table(
                         n_file: list[str] | None = None
                         if idx is not None:
                             registry_strict_prof = (pkey or "").strip().upper() == "B"
-                            cand_all = idx.candidates_for_employee(
+                            p_lookup = employee_with_face_sheet_profession(
                                 p,
+                                face_sheet_profession=face_sheet_profession,
+                                v_prof_main_by_fio=v_prof_main_by_fio,
+                            )
+                            cand_all = idx.candidates_for_employee(
+                                p_lookup,
                                 protocol_queries,
                                 apply_profession_filter_for_registry=registry_strict_prof,
                             )
@@ -2620,7 +2898,7 @@ def _rebuild_protocol_result_table(
                             n_file = idx.registry_numbers_for_hints(
                                 cand_blk,
                                 hints,
-                                emp=p,
+                                emp=p_lookup,
                                 require_profession_for_registry=registry_strict_prof,
                             )
                         row.cells[4].text = _format_n_registry_lines(
@@ -2649,6 +2927,11 @@ def fill_protocol_result_table(
     protocol_no_for_registry: str = "",
     date_str_for_registry: str = "",
     technical_protocol: bool = False,
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> tuple[int, int]:
     if technical_protocol and program_titles:
         merged = persons_v_raw if persons_v_raw is not None else persons
@@ -2674,6 +2957,11 @@ def fill_protocol_result_table(
             trained_registry_index=trained_registry_index,
             protocol_no_for_registry=protocol_no_for_registry,
             date_str_for_registry=date_str_for_registry,
+            face_sheet_profession=face_sheet_profession,
+            persons_row_source=persons_row_source,
+            v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+            v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+            v_prof_main_by_fio=v_prof_main_by_fio,
         )
     return _fill_static_protocol_result_table(
         doc,
@@ -2704,6 +2992,10 @@ def build_filled_protocol_document(
     tech_approver: str = "",
     tech_program_name: str = "",
     tech_approval_date_raw: str = "",
+    face_sheet_profession: str | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> tuple[Document, int]:
     """
     Загружает шаблон .docx, подставляет поля, возвращает (документ, «остаток»).
@@ -2735,6 +3027,11 @@ def build_filled_protocol_document(
             program_keys,
             program_titles,
             persons_b_all_rows,
+            face_sheet_profession=face_sheet_profession,
+            persons_row_source=b_src,
+            v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+            v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+            v_prof_main_by_fio=v_prof_main_by_fio,
         )
     elif program_titles:
         paragraph_theme = "; ".join(program_titles).strip()
@@ -2835,7 +3132,14 @@ def build_filled_protocol_document(
 
     if excel_path and excel_path.is_file() and program_keys and persons_b_all_rows:
         fg_lines = build_fg_lines_for_selected_programs(
-            excel_path, program_keys, persons_b_all_rows
+            excel_path,
+            program_keys,
+            persons_b_all_rows,
+            face_sheet_profession=face_sheet_profession,
+            persons_row_source=b_src,
+            v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+            v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+            v_prof_main_by_fio=v_prof_main_by_fio,
         )
         insert_program_fg_lines_after_anchor(doc, fg_lines)
 
@@ -2854,6 +3158,11 @@ def build_filled_protocol_document(
         protocol_no_for_registry=protocol_no,
         date_str_for_registry=date_str,
         technical_protocol=technical_protocol,
+        face_sheet_profession=face_sheet_profession,
+        persons_row_source=b_src,
+        v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+        v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+        v_prof_main_by_fio=v_prof_main_by_fio,
     )
 
     lines_after = [p.text for p in _all_document_paragraphs_ordered(doc)]
@@ -2913,6 +3222,10 @@ def save_protocol_docx_from_template(
     tech_approver: str = "",
     tech_program_name: str = "",
     tech_approval_date_raw: str = "",
+    face_sheet_profession: str | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> None:
     doc, _ = build_filled_protocol_document(
         template_path,
@@ -2933,8 +3246,12 @@ def save_protocol_docx_from_template(
         tech_approver=tech_approver,
         tech_program_name=tech_program_name,
         tech_approval_date_raw=tech_approval_date_raw,
+        face_sheet_profession=face_sheet_profession,
+        v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+        v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+        v_prof_main_by_fio=v_prof_main_by_fio,
     )
-    doc.save(output_path)
+    save_formed_protocol_docx(doc, output_path)
 
 
 def _iter_paragraph_runs(paragraph: DocxParagraph):

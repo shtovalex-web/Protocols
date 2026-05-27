@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import webbrowser
+from urllib.parse import quote
 
 import tkinter as tk
 
@@ -16,11 +17,15 @@ APP_WINDOW_TITLE = "ProtocolOOT — протоколы ОТ"
 # Полное название — в «О программе» и документации.
 APP_FULL_NAME = "Программа для формирования протоколов проверки знаний по охране труда"
 # Отредактируйте перед распространением сборки.
-APP_VERSION = "1.0"
+APP_VERSION = "1.4"
 APP_DEVELOPER_NAME = "Шитов Алексей Александрович"
 APP_DEVELOPER_ROLE = "разработка и сопровождение"
 APP_DEVELOPER_ORG = ""
 APP_DEVELOPER_CONTACT = "ShitovAA@Transneft.ru"
+# Тема письма при клике на e-mail в окне «О программе».
+APP_FEEDBACK_MAIL_SUBJECT = (
+    "Предложение/замечание по работе с программой протоколов"
+)
 
 _ABOUT_EMAIL_TAG = "about_email_link"
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", re.IGNORECASE)
@@ -28,6 +33,15 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", re.IGNORECASE)
 
 def _is_email_address(value: str) -> bool:
     return bool(_EMAIL_RE.match((value or "").strip()))
+
+
+def feedback_mailto_url(email: str) -> str:
+    """mailto: с темой для обратной связи по программе."""
+    addr = (email or "").strip()
+    subject = quote((APP_FEEDBACK_MAIL_SUBJECT or "").strip(), safe="")
+    if subject:
+        return f"mailto:{addr}?subject={subject}"
+    return f"mailto:{addr}"
 
 
 def _about_plain_lines() -> list[str]:
@@ -86,7 +100,7 @@ def populate_application_about_text(widget: tk.Text) -> None:
     widget.tag_configure(_ABOUT_EMAIL_TAG, foreground="#0563C1", underline=True)
 
     def _open_mail(_event=None) -> str:
-        webbrowser.open(f"mailto:{email_link}")
+        webbrowser.open(feedback_mailto_url(email_link))
         return "break"
 
     widget.tag_bind(_ABOUT_EMAIL_TAG, "<Button-1>", _open_mail)

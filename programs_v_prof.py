@@ -314,6 +314,60 @@ _V_PROF_SKIP_HEADERS = frozenset(
 )
 
 
+def v_prof_search_prefix_keys(profession: str) -> tuple[str, ...]:
+    """Первое и первые два слова должности (нормализованные) для быстрого отбора в V_PROF."""
+    target = norm_profession_key(profession)
+    if not target:
+        return ()
+    words = target.split()
+    if not words:
+        return ()
+    keys: list[str] = [words[0]]
+    if len(words) >= 2:
+        keys.append(f"{words[0]} {words[1]}")
+    return tuple(keys)
+
+
+def v_prof_search_prefix_display(profession: str) -> str:
+    """Текст для подсказки в интерфейсе: по какому началу фразы ищутся варианты."""
+    keys = v_prof_search_prefix_keys(profession)
+    if not keys:
+        return ""
+    if len(keys) == 1:
+        return f"«{keys[0]}»"
+    return f"«{keys[0]}» / «{keys[1]}»"
+
+
+def _v_prof_row_matches_prefix(prof: str, prefix_keys: tuple[str, ...]) -> bool:
+    """Строка V_PROF подходит, если начинается с 1–2 первых слов введённой должности (или наоборот)."""
+    key = norm_profession_key(prof)
+    if not key or not prefix_keys:
+        return False
+    for px in prefix_keys:
+        if key.startswith(px) or px.startswith(key):
+            return True
+    return False
+
+
+def _v_prof_row_matches_loose(prof: str, profession: str) -> bool:
+    """
+    Расширенное совпадение: подстрока или общее слово (≥4 букв), напр. «стропальщик» ↔ «стропальщик трмз».
+    """
+    key = norm_profession_key(prof)
+    target = norm_profession_key(profession)
+    if not key or not target:
+        return False
+    if key == target or target in key or key in target:
+        return True
+    for w in target.split():
+        if len(w) >= 4 and w in key:
+            return True
+    for w in key.split():
+        if len(w) >= 4 and w in target:
+            return True
+    return False
+
+
 @lru_cache(maxsize=8)
 def _load_v_prof_profession_rows(
     path_str: str, mtime_ns: int
@@ -361,7 +415,10 @@ def similar_professions_in_v_prof(
     limit: int = 5,
     min_score: int = 1,
 ) -> list[VProfProfessionCandidate]:
-    """Топ похожих профессий из столбца A листа V_PROF для подсказок в интерфейсе."""
+    """
+    Похожие профессии из столбца A листа V_PROF для выпадающего списка.
+    Сначала отбор только по началу фразы (1–2 первых слова), без перебора всего листа.
+    """
     pr = (profession or "").strip()
     if not pr or not path.is_file():
         return []
@@ -372,9 +429,25 @@ def similar_professions_in_v_prof(
         return []
     layout = v_prof_layout_for_path(p)
     target = norm_profession_key(pr)
+    prefix_keys = v_prof_search_prefix_keys(pr)
+    pool: list[tuple[str, tuple[Any, ...]]] = []
+    for prof, row in rows:
+        key = norm_profession_key(prof)
+        if key == target:
+            pool.append((prof, row))
+            continue
+        if prefix_keys and _v_prof_row_matches_prefix(prof, prefix_keys):
+            pool.append((prof, row))
+    if not pool:
+        for prof, row in rows:
+            if _v_prof_row_matches_loose(prof, pr):
+                pool.append((prof, row))
+    if not pool:
+        return []
+
     scored: list[VProfProfessionCandidate] = []
     seen: set[str] = set()
-    for prof, row in rows:
+    for prof, row in pool:
         key = norm_profession_key(prof)
         if key in seen:
             continue
@@ -383,12 +456,10 @@ def similar_professions_in_v_prof(
             score = 3
         elif target in key or key in target:
             score = 2
-        elif min_score <= 1:
-            # Частичное совпадение по словам (длинные должности)
-            tw = set(target.split())
-            kw = set(key.split())
-            if tw and kw and (tw <= kw or kw <= tw or len(tw & kw) >= 2):
-                score = 1
+        elif prefix_keys and _v_prof_row_matches_prefix(prof, prefix_keys):
+            score = 1
+        elif _v_prof_row_matches_loose(prof, pr):
+            score = 1
         if score < min_score:
             continue
         seen.add(key)
@@ -405,10 +476,36 @@ def similar_professions_in_v_prof(
     return scored[: max(1, limit)]
 
 
+def v_prof_candidates_for_profession_list(
+    path: Path,
+    professions: list[str],
+    *,
+    limit_per: int = 4,
+    total_limit: int = 12,
+) -> list[VProfProfessionCandidate]:
+    """Варианты V_PROF по нескольким должностям (совмещения из списка сотрудников)."""
+    merged: list[VProfProfessionCandidate] = []
+    seen: set[str] = set()
+    for pr in professions:
+        t = (pr or "").strip()
+        if not t:
+            continue
+        for c in similar_professions_in_v_prof(path, t, limit=limit_per):
+            k = norm_profession_key(c.profession)
+            if k in seen:
+                continue
+            seen.add(k)
+            merged.append(c)
+    merged.sort(
+        key=lambda c: (-c.score, -c.v_program_count, c.profession.lower())
+    )
+    return merged[: max(1, total_limit)]
+
+
 def match_profession_in_v_prof(
     path: Path, profession: str, *, select_row_fn
 ) -> VProfProfessionMatch | None:
-    """Сопоставление должности из rabotnik с колонкой «Профессия» листа V_PROF."""
+    """Сопоставление должности (лицевая часть / rabotnik) с колонкой «Профессия» листа V_PROF."""
     pr = (profession or "").strip()
     if not pr or not path.is_file():
         return None

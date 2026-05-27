@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from app_paths import application_bundle_dir
+from clipboard_ui import register_clipboard_window
 from protocol_embedded_assets import apply_embedded_window_icon_from_parent
 
 FAQ_CANDIDATE_NAMES = ("FAQ.txt", "FAQ.md")
@@ -146,4 +147,5 @@ def open_faq_window(parent: tk.Misc, *, title: str = "Справка и FAQ") ->
     except tk.TclError:
         pass
     ent.focus_set()
+    register_clipboard_window(win)
     win.lift()

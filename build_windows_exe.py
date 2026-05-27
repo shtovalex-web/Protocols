@@ -65,6 +65,7 @@ _PYI_HIDDEN = [
     "excel_data_cache",
     "docx_template_protection",
     "programs_v_prof",
+    "v_prof_combinations",
     "faq_viewer",
     "mintrud_export",
     "mintrud_trained_registry",

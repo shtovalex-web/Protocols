@@ -17,6 +17,7 @@ from tkinter import messagebox
 from tkinter import ttk
 
 from app_paths import application_user_dir
+from clipboard_ui import bind_editable_clipboard, register_clipboard_window
 from employees_io import (
     EmployeeExcelError,
     EmployeeRecord,
@@ -736,6 +737,20 @@ class CommissionAdminPanel(ttk.Labelframe):
             text="Сохранить приказ и состав в базу данных",
             command=self._save_to_db,
         ).grid(row=11, column=0, columnspan=2, sticky=tk.W, pady=(12, 0))
+
+        for w in (
+            self.entry_commission_order_no,
+            self.entry_commission_order_date,
+            self.entry_commission_order_approver,
+            self.txt_commission_venue,
+        ):
+            bind_editable_clipboard(w)
+        try:
+            self.after_idle(
+                lambda: register_clipboard_window(self.winfo_toplevel())
+            )
+        except tk.TclError:
+            pass
 
         self.load_from_db_into_ui()
         self.refresh_pool_display()

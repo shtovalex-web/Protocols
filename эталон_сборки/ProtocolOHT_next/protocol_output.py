@@ -17,6 +17,7 @@ except ImportError:
     XPos = None  # type: ignore[misc, assignment]
     YPos = None  # type: ignore[misc, assignment]
 
+from docx_template_protection import save_formed_protocol_docx
 from employees_io import EmployeeRecord
 from protocol_docx import _fill_protocol_form, build_filled_protocol_document, load_protocol_form_lines
 
@@ -171,6 +172,10 @@ def write_protocol_pdf_from_docx_template(
     tech_approver: str = "",
     tech_program_name: str = "",
     tech_approval_date_raw: str = "",
+    face_sheet_profession: str | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> None:
     """Собирает DOCX из шаблона и конвертирует в PDF через Word (сохраняет оформление)."""
     fd, tmp_docx = tempfile.mkstemp(suffix=".docx")
@@ -195,8 +200,12 @@ def write_protocol_pdf_from_docx_template(
             tech_approver=tech_approver,
             tech_program_name=tech_program_name,
             tech_approval_date_raw=tech_approval_date_raw,
+            face_sheet_profession=face_sheet_profession,
+            v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+            v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+            v_prof_main_by_fio=v_prof_main_by_fio,
         )
-        doc.save(tmp_docx)
+        save_formed_protocol_docx(doc, tmp_docx)
         tmp_p = Path(tmp_docx).resolve()
         out_p = Path(pdf_path).resolve()
         if sys.platform == "win32":

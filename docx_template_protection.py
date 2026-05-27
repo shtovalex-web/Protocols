@@ -154,6 +154,15 @@ def apply_docx_word_readonly_protection(
         set_windows_readonly_flag(path, True)
 
 
+def save_formed_protocol_docx(doc: object, output_path: str | Path) -> None:
+    """
+    Сохранить сформированный протокол и снять защиту Word, унаследованную от шаблона.
+    """
+    path = Path(output_path)
+    doc.save(str(path))  # type: ignore[union-attr]
+    remove_docx_word_readonly_protection(path, windows_readonly=False)
+
+
 def remove_docx_word_readonly_protection(
     path: Path,
     *,
