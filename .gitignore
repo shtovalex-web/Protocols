@@ -6,6 +6,8 @@ venv/
 .venv/
 *.egg-info/
 .eggs/
+.pytest_cache/
+.ruff_cache/
 
 # Локальные данные приложения (не в репозиторий)
 protocols.db
@@ -13,6 +15,18 @@ last_protocol_no.json
 Data_base.xlsx
 Programs_base.xlsx
 protocol_errors_journal.txt
+Mintrud/*
+!Mintrud/mintrud_shablon_20260401.xlsx
+!Mintrud/mintrud_shablon_20260401 как есть.xml
+
+# Дубликаты шаблонов в корне (канонические копии — в bundle/)
+/Шаблон_Минтруд_XSD_УМН.xlsx
+/Реестр обученных по охране труда лиц.xlsx
+
+# Пакеты для ИБ / локальная упаковка (не в репозиторий)
+ib_*/
+ib_*.zip
+ib_full*/
 
 # Черновики / тестовые docx (шаблон — default_protocol.docx)
 123*.docx
@@ -31,9 +45,12 @@ ProtocolOHT_app/
 ProtocolOHT_onefile/
 ProtocolOOT.spec
 
-# Пакеты для ИБ / локальная упаковка (не в репозиторий)
-ib_*/
-ib_*.zip
+# Linux-порт (сгенерированная копия и сборка; на ветке `linux` каталог app/ коммитится принудительно)
+linux_port/app/
+linux_port/.venv/
+linux_port/ProtocolOHT_linux_dist/
+linux_port/_pyinstaller_build_linux/
+linux_port/ProtocolOOT.spec
 
 # Сгенерированные протоколы пользователя
 Protokol/

@@ -67,6 +67,16 @@ def launch_app() -> None:
     print("Запущен отдельный процесс main.py — проверьте окно приложения.")
 
 
+def run_unit_tests() -> None:
+    r = subprocess.run(
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        cwd=ROOT,
+    )
+    if r.returncode != 0:
+        raise SystemExit(r.returncode)
+    print("unittest (tests/): OK")
+
+
 def main() -> int:
     argv = list(sys.argv[1:])
     no_launch = False
@@ -83,6 +93,7 @@ def main() -> int:
 
     run_ruff()
     smoke_imports()
+    run_unit_tests()
     if not no_launch:
         launch_app()
     return 0

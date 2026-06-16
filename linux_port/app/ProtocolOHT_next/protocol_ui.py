@@ -3412,8 +3412,8 @@ class ProtocolApp(tk.Tk):
                     pdf_from_preview = True
                     messagebox.showwarning(
                         "PDF из предпросмотра",
-                        "Не удалось сохранить PDF через Microsoft Word (нужен установленный Word и пакет pywin32, "
-                        "либо сбой при конвертации).\n\n"
+                        "Не удалось сохранить PDF с оформлением DOCX (нужны LibreOffice "
+                        "или Microsoft Word + docx2pdf, либо сбой конвертации).\n\n"
                         f"{e_word}\n\n"
                         "Сохранён упрощённый PDF из текста предпросмотра (без таблиц и оформления Word).",
                     )

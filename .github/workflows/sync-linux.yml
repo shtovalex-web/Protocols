@@ -1,0 +1,54 @@
+name: sync-linux
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write
+
+jobs:
+  sync-linux-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install Linux port dependencies
+        run: python -m pip install -r linux_port/requirements.txt ruff
+
+      - name: Sync linux branch from main
+        run: |
+          SOURCE="${GITHUB_REF_NAME}"
+          git fetch origin
+          if git show-ref --verify --quiet refs/heads/linux; then
+            git checkout linux
+          else
+            git checkout -b linux "origin/${SOURCE}"
+          fi
+          git merge "origin/${SOURCE}" -m "merge ${SOURCE} into linux (CI)" || {
+            echo "Merge conflict — resolve manually on linux branch"
+            exit 1
+          }
+          python linux_port/prepare.py
+          python linux_port/verify_linux.py --no-launch
+          python -m unittest discover -s tests -v
+          git add -f linux_port/app/
+          git add linux_port/
+          if git diff --cached --quiet; then
+            echo "linux_port/app unchanged"
+          else
+            git commit -m "sync: linux app from ${SOURCE} ($(date -u +%Y-%m-%dT%H:%MZ))"
+          fi
+          git push origin linux

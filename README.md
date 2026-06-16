@@ -82,6 +82,8 @@ py -3 build_windows_exe.py
 
 ## Структура модулей (кратко)
 
+Подробнее о каталогах репозитория: `docs/STRUCTURE.md`. Уборка кэшей и сборок: `python tools/tidy_workspace.py --apply` или `tidy_workspace.bat`.
+
 | Модуль | Роль |
 |--------|------|
 | `main.py` | Точка входа; логика приложения в `ProtocolOHT_next/`. |
@@ -119,6 +121,8 @@ setup_git_hooks.bat
 После этого каждый `git commit` вызывает `git push origin <ветка>`. При сбое сети повторите `sync_github.bat`.
 
 На GitHub при push/pull request запускается проверка `tools/verify_project.py --no-launch` (см. `.github/workflows/verify.yml`).
+
+Ветка **`linux`**: полная копия для Linux, синхронизация с `main` — `python tools/sync_linux_branch.py` или автоматически через CI (`sync-linux.yml`). Подробнее: `docs/LINUX_BRANCH.md`.
 
 Подробнее: `docs/GITHUB_SYNC.md`.
 

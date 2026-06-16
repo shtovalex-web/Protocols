@@ -1,0 +1,12 @@
+app/
+.venv/
+__pycache__/
+*.py[cod]
+ProtocolOHT_linux_dist/
+_pyinstaller_build_linux/
+ProtocolOOT.spec
+protocols.db
+last_protocol_no.json
+protocol_errors_journal.txt
+Protokol/
+Mintrud/
