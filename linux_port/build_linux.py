@@ -5,6 +5,7 @@
 Запускать на Linux после prepare.py:
     python3 linux_port/build_linux.py
     python3 build_linux.py          # из linux_port/
+    python3 build_linux.py --no-verify   # без ruff/verify (CI)
     ./build_linux.sh
 
 Результат: linux_port/ProtocolOHT_linux_dist/ — ProtocolOOT + data/
@@ -126,6 +127,9 @@ def main() -> int:
         )
         return 1
 
+    skip_verify = "--no-verify" in sys.argv
+    out_args = [a for a in sys.argv[1:] if a != "--no-verify"]
+
     os.chdir(APP)
     sys.path.insert(0, str(NEXT))
     sys.path.insert(1, str(APP))
@@ -139,13 +143,14 @@ def main() -> int:
         )
         return 1
 
-    if _run_verify() != 0:
-        return 1
-    if _run_ruff() != 0:
-        return 1
+    if not skip_verify:
+        if _run_verify() != 0:
+            return 1
+        if _run_ruff() != 0:
+            return 1
 
-    if len(sys.argv) > 1:
-        OUT_DIR = Path(" ".join(sys.argv[1:]).strip().strip('"')).expanduser().resolve()
+    if out_args:
+        OUT_DIR = Path(" ".join(out_args).strip().strip('"')).expanduser().resolve()
     else:
         OUT_DIR = DEFAULT_OUT_DIR
     OUT_DIR.mkdir(parents=True, exist_ok=True)

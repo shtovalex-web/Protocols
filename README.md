@@ -122,7 +122,8 @@ setup_git_hooks.bat
 
 На GitHub при push/pull request запускается проверка `tools/verify_project.py --no-launch` (см. `.github/workflows/verify.yml`).
 
-Ветка **`linux`**: полная копия для Linux, синхронизация с `main` — `python tools/sync_linux_branch.py` или автоматически через CI (`sync-linux.yml`). Подробнее: `docs/LINUX_BRANCH.md`.
+Ветка **`linux`**: полная копия для Linux, синхронизация с `main` — `python tools/sync_linux_branch.py` или автоматически через CI (`sync-linux.yml`).  
+**Бинарник PyInstaller** (дистрибутив без исходников): `docs/LINUX_DIST.md`, сборка в CI — workflow `build-linux-dist`.
 
 Подробнее: `docs/GITHUB_SYNC.md`.
 

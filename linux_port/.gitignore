@@ -3,6 +3,7 @@ app/
 __pycache__/
 *.py[cod]
 ProtocolOHT_linux_dist/
+ProtocolOHT_linux_dist.zip
 _pyinstaller_build_linux/
 ProtocolOOT.spec
 protocols.db

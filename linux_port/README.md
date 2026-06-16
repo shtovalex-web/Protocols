@@ -40,6 +40,19 @@ chmod +x *.sh
 ./run.sh
 ```
 
+## Бинарник (дистрибутив без исходников)
+
+```bash
+./install_deps.sh
+python3 -m pip install -r requirements-build.txt
+./build_linux.sh
+```
+
+Результат: **`ProtocolOHT_linux_dist/`** — `ProtocolOOT` + `data/`.
+
+Готовый **zip** с GitHub: Actions → **build-linux-dist** → артефакт `ProtocolOHT_linux_dist.zip`.  
+Подробно: `docs/LINUX_DIST.md`.
+
 ## Функциональность
 
 | Возможность | Linux-порт |
