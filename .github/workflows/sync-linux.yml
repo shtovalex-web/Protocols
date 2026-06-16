@@ -42,6 +42,7 @@ jobs:
             exit 1
           }
           python linux_port/prepare.py
+          find linux_port/app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
           python linux_port/verify_linux.py --no-launch
           python -m unittest discover -s tests -v
           git add -f linux_port/app/

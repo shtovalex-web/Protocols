@@ -90,6 +90,11 @@ def _write_manifest(source_branch: str) -> None:
 
 
 def _commit_linux_app(message: str) -> bool:
+    import shutil as _shutil
+
+    for cache in APP_DIR.rglob("__pycache__"):
+        if cache.is_dir():
+            _shutil.rmtree(cache, ignore_errors=True)
     _run(["git", "add", "-f", "linux_port/app/"])
     _run(["git", "add", "linux_port/"])
     r = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=str(ROOT))

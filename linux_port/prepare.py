@@ -132,6 +132,11 @@ def _copy_port_meta() -> None:
         src = LINUX_PORT / name
         if src.is_file():
             shutil.copy2(src, APP_DIR / name)
+    gitignore = APP_DIR / ".gitignore"
+    gitignore.write_text(
+        "# Сгенерированная копия — не коммитить кэши\n__pycache__/\n*.py[cod]\n",
+        encoding="utf-8",
+    )
 
 
 def prepare() -> int:
