@@ -1,8 +1,0 @@
-openpyxl
-python-docx
-fpdf
-# PDF из DOCX на Linux: LibreOffice (системный пакет) или docx2pdf + Word
-docx2pdf
-# Родительный падеж для ФИО/должностей комиссии:
-pymorphy2
-pymorphy2-dicts-ru
