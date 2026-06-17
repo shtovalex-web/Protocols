@@ -44,9 +44,10 @@ chmod +x *.sh
 
 ```bash
 ./install_deps.sh
-python3 -m pip install -r requirements-build.txt
 ./build_linux.sh
 ```
+
+`install_deps.sh` ставит `python3-tk`, `binutils`, `python3-dev` и pip-зависимости (как в [grafik-pz](https://github.com/shtovalex-web/grafik-pz)).
 
 Результат: **`ProtocolOHT_linux_dist/`** — `ProtocolOOT` + `data/`.
 

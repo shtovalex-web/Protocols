@@ -15,6 +15,8 @@ if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get install -y \
     python3-tk \
     python3-venv \
+    python3-dev \
+    binutils \
     libreoffice-writer \
     fonts-dejavu-core \
     fonts-liberation
