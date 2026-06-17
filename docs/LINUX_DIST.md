@@ -35,9 +35,10 @@ git clone -b linux https://github.com/shtovalex-web/Protocols.git
 cd Protocols/linux_port
 chmod +x build_linux.sh install_deps.sh
 ./install_deps.sh
-python3 -m pip install -r requirements-build.txt
 ./build_linux.sh
 ```
+
+`install_deps.sh` ставит системные пакеты (`python3-tk`, `binutils`, `python3-dev`, LibreOffice, шрифты) и pip-зависимости; `build_linux.sh` — проверки как в [grafik-pz](https://github.com/shtovalex-web/grafik-pz) и запуск PyInstaller.
 
 Результат: `linux_port/ProtocolOHT_linux_dist/`.
 
@@ -47,6 +48,19 @@ python3 -m pip install -r requirements-build.txt
 cd linux_port/ProtocolOHT_linux_dist
 zip -r ../ProtocolOHT_linux_dist.zip .
 ```
+
+## Требования для сборки (Linux)
+
+| Пакет | Зачем |
+|-------|--------|
+| `python3-tk` | tkinter (проверка перед сборкой) |
+| `binutils` | `objdump` для PyInstaller |
+| `python3-dev` | `libpython3*.so` |
+| `requirements-build.txt` | PyInstaller, ruff |
+
+Debian/Ubuntu: `sudo apt install python3-tk python3-venv python3-dev binutils`
+
+На ALT Linux и в VM: собирайте в локальной копии (`~/Protocols`), не на смонтированной папке VirtualBox — иначе ломаются симлинки venv/PyInstaller (см. опыт [grafik-pz](https://github.com/shtovalex-web/grafik-pz/blob/main/docs/linux.md)).
 
 ## Требования на целевом ПК
 
