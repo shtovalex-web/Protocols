@@ -2,9 +2,10 @@
 """
 Сборка Word из bundle/ПОДРОБНАЯ_ИНСТРУКЦИЯ_для_пользователя.md
 
+    py -3 tools/capture_manual_screenshots.py   # снимки окон (Windows/Linux с GUI)
     py -3 tools/generate_podrobnaya_instruction_docx.py
 
-Или: generate_podrobnaya_instruction_docx.bat
+Или: generate_podrobnaya_instruction_docx.bat (снимки + Word)
 """
 
 from __future__ import annotations

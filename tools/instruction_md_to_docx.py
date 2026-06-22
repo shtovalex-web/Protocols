@@ -7,12 +7,14 @@ import re
 from pathlib import Path
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Inches, Pt
 
 _SEG = re.compile(r"(\*\*[^*]+\*\*|\*[^*]+\*)")
 _NUM = re.compile(r"^(\d+)\.\s+(.*)$")
 _TABLE_SEP = re.compile(r"^\|[\s\-:|]+\|$")
+_IMG = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)$")
 
 
 def _iter_md_lines_skip_html_comments(lines: list[str]):
@@ -69,6 +71,24 @@ def _parse_table_row(line: str) -> list[str]:
     return [c.strip() for c in line.strip().split("|") if c.strip()]
 
 
+def _add_image(doc: Document, md_path: Path, caption: str, rel_path: str) -> None:
+    img_path = (md_path.parent / rel_path).resolve()
+    if not img_path.is_file():
+        p = doc.add_paragraph()
+        p.add_run(f"[Снимок экрана: {caption or rel_path} — файл не найден: {rel_path}]")
+        return
+    pic_p = doc.add_paragraph()
+    pic_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pic_p.add_run().add_picture(str(img_path), width=Inches(6.2))
+    cap_text = (caption or "").strip()
+    if cap_text:
+        cap = doc.add_paragraph(cap_text)
+        cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if cap.runs:
+            cap.runs[0].italic = True
+            cap.runs[0].font.size = Pt(11)
+
+
 def _add_table(doc: Document, rows: list[list[str]]) -> None:
     if not rows:
         return
@@ -112,6 +132,13 @@ def build_docx_from_markdown(md_path: Path, out_path: Path) -> None:
         if not line:
             i += 1
             continue
+
+        img_m = _IMG.match(line)
+        if img_m:
+            _add_image(doc, md_path, img_m.group(1), img_m.group(2))
+            i += 1
+            continue
+
         if line == "---":
             doc.add_paragraph()
         elif line.startswith("# "):

@@ -36,6 +36,10 @@ def build_protocol_export_meta_json(
     *,
     protocol_no_formatted: str,
     persons_raw: list[EmployeeRecord] | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    face_sheet_profession: str | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
 ) -> str:
     """JSON журнала для Минтруда: программы, номер протокола, сотрудники с должностями."""
     titles_map = {str(k): str(t) for k, t in zip(program_keys, program_titles)}
@@ -48,6 +52,24 @@ def build_protocol_export_meta_json(
         payload["persons_raw"] = [
             employee_record_to_meta_dict(p) for p in persons_raw if (p.fio or "").strip()
         ]
+    if persons_row_source:
+        payload["persons_row_source"] = [
+            employee_record_to_meta_dict(p)
+            for p in persons_row_source
+            if (p.fio or "").strip()
+        ]
+    fs = (face_sheet_profession or "").strip()
+    if fs:
+        payload["face_sheet_profession"] = fs
+    if v_prof_enabled_by_fio:
+        payload["v_prof_enabled_by_fio"] = {
+            str(k): sorted(str(x) for x in v)
+            for k, v in v_prof_enabled_by_fio.items()
+        }
+    if v_prof_main_by_fio:
+        payload["v_prof_main_by_fio"] = {
+            str(k): str(v) for k, v in v_prof_main_by_fio.items() if str(v).strip()
+        }
     return json.dumps(payload, ensure_ascii=False)
 
 

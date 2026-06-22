@@ -7,7 +7,7 @@
 
 Для записей с метаданными: «Б» — лист B; «ПП»/«СИЗ» — листы PP/SIZ (одно имя на протокол);
 ID — с листа V. «В» — матрица V_PROF («Да») + текст из столбца B листа V; ID — по совпадению с B.
-Должность — из persons_raw журнала или Excel по ФИО.
+Должность — из persons_raw журнала или Excel по ФИО; для программы «В» — должность из протокола.
 Старые записи без meta — одна строка с полем topic.
 СНИЛС в шаблоне — из файла сотрудников по ФИО (в meta может быть снимок для справки).
 «Тест пройден»: 1 / 0.
@@ -390,6 +390,99 @@ def _persons_from_meta(persons_raw: list[Any]) -> list[EmployeeRecord]:
     return out
 
 
+def _meta_v_prof_context(meta: dict[str, Any]) -> dict[str, Any]:
+    """Контекст программы «В» из export_meta_json (снимок протокола)."""
+    row_src = _persons_from_meta(meta.get("persons_row_source") or [])
+    if not row_src:
+        merged = _persons_from_meta(meta.get("persons_raw") or [])
+        if merged:
+            from protocol_docx import expand_persons_block_b_rows
+
+            row_src = expand_persons_block_b_rows(merged)
+        else:
+            row_src = []
+    face_sheet = str(meta.get("face_sheet_profession") or "").strip() or None
+    enabled_by_fio: dict[str, frozenset[str]] | None = None
+    enabled_raw = meta.get("v_prof_enabled_by_fio")
+    if isinstance(enabled_raw, dict):
+        enabled_by_fio = {}
+        for k, vals in enabled_raw.items():
+            if isinstance(vals, list):
+                enabled_by_fio[str(k)] = frozenset(str(x) for x in vals if str(x).strip())
+    main_by_fio: dict[str, str] | None = None
+    main_raw = meta.get("v_prof_main_by_fio")
+    if isinstance(main_raw, dict):
+        main_by_fio = {str(k): str(v).strip() for k, v in main_raw.items() if str(v).strip()}
+    return {
+        "persons_row_source": row_src,
+        "face_sheet_profession": face_sheet,
+        "v_prof_enabled_by_fio": enabled_by_fio,
+        "v_prof_main_by_fio": main_by_fio,
+    }
+
+
+def mintrud_v_program_entries_for_employee(
+    catalog_path: Path,
+    emp: EmployeeRecord,
+    meta: dict[str, Any],
+    *,
+    employees: list[EmployeeRecord] | None,
+    lookup: dict[str, tuple[str, str]],
+    v_parts_for_employee: Callable[[Path, EmployeeRecord], list[str]] | None = None,
+) -> list[tuple[str, str]]:
+    """
+    Строки программы «В» для Минтруда: (наименование, должность из протокола).
+    Использует снимок протокола в meta; при отсутствии — запасной v_parts_for_employee.
+    """
+    from protocol_docx import v_program_parts_with_professions_for_employee
+
+    ctx = _meta_v_prof_context(meta)
+    if catalog_path.is_file():
+        emp_v = employee_enriched_for_v_prof_export(emp, employees, lookup)
+        entries = v_program_parts_with_professions_for_employee(
+            catalog_path,
+            emp_v,
+            face_sheet_profession=ctx["face_sheet_profession"],
+            persons_row_source=ctx["persons_row_source"],
+            v_prof_enabled_by_fio=ctx["v_prof_enabled_by_fio"],
+            v_prof_main_by_fio=ctx["v_prof_main_by_fio"],
+        )
+        if entries:
+            return entries
+    if v_parts_for_employee is not None and catalog_path.is_file():
+        emp_v = employee_enriched_for_v_prof_export(emp, employees, lookup)
+        try:
+            parts = list(v_parts_for_employee(catalog_path, emp_v) or [])
+        except Exception:
+            _log.exception(
+                "v_parts_for_employee fallback: %s, сотрудник %s",
+                catalog_path,
+                emp.fio,
+            )
+            parts = []
+        if parts:
+            pos = (emp_v.profession or "").strip()
+            if not pos:
+                _, pos_lu = lookup.get(_norm_fio_lookup_key(emp.fio or ""), ("", ""))
+                pos = (pos_lu or "").strip()
+            return [(frag, pos) for frag in parts if (frag or "").strip()]
+    titles_map = {str(k): str(v) for k, v in meta.get("program_titles", {}).items()}
+    fb_parts = v_parts_from_stored_v_title(titles_map.get("V", ""))
+    if fb_parts:
+        pos = (emp.profession or "").strip()
+        if not pos and ctx["persons_row_source"]:
+            for row in ctx["persons_row_source"]:
+                if _norm_fio_lookup_key(row.fio or "") == _norm_fio_lookup_key(emp.fio or ""):
+                    pos = (row.profession or "").strip()
+                    if pos:
+                        break
+        if not pos:
+            _, pos_lu = lookup.get(_norm_fio_lookup_key(emp.fio or ""), ("", ""))
+            pos = (pos_lu or "").strip()
+        return [(frag, pos) for frag in fb_parts]
+    return []
+
+
 def v_parts_from_stored_v_title(title: str) -> list[str]:
     """
     Строки программы «В» из заголовка журнала («Программа (В)\\n(2. …\\n3. …)»).
@@ -556,29 +649,41 @@ def build_export_rows(
 
                 for key in keys:
                     if parse_program_key(key) == ProgramKey.V:
-                        if v_parts_for_employee is None:
-                            continue
-                        parts: list[str] = []
+                        entries: list[tuple[str, str]] = []
                         if catalog_path is not None and catalog_path.is_file():
-                            emp_v = employee_enriched_for_v_prof_export(
-                                emp, employees, lookup
-                            )
                             try:
-                                parts = list(
-                                    v_parts_for_employee(catalog_path, emp_v) or []
+                                entries = mintrud_v_program_entries_for_employee(
+                                    catalog_path,
+                                    emp,
+                                    meta,
+                                    employees=employees,
+                                    lookup=lookup,
+                                    v_parts_for_employee=v_parts_for_employee,
                                 )
                             except Exception:
                                 _log.exception(
-                                    "v_parts_for_employee: %s, сотрудник %s",
+                                    "mintrud_v_program_entries_for_employee: %s, сотрудник %s",
                                     catalog_path,
                                     fio_one,
                                 )
-                                parts = []
-                        if not parts:
+                                entries = []
+                        if not entries:
                             fb_title = titles_map.get(key, "").strip()
                             fb_parts = v_parts_from_stored_v_title(fb_title)
                             if not fb_parts and fb_title:
                                 fb_parts = [fb_title]
+                            proto_pos = (emp.profession or "").strip()
+                            if not proto_pos:
+                                for row in _persons_from_meta(
+                                    meta.get("persons_row_source") or meta.get("persons_raw") or []
+                                ):
+                                    if _norm_fio_lookup_key(row.fio or "") == _norm_fio_lookup_key(
+                                        fio_one
+                                    ):
+                                        proto_pos = (row.profession or "").strip()
+                                        if proto_pos:
+                                            break
+                            row_pos_fb = proto_pos or position
                             for frag in fb_parts:
                                 frag = (frag or "").strip()
                                 if not frag:
@@ -591,7 +696,7 @@ def build_export_rows(
                                         fn=fn,
                                         pt=pt,
                                         snils=snils,
-                                        position=position,
+                                        position=row_pos_fb,
                                         date_s=date_s,
                                         proto_no=proto_no,
                                         tp=tp,
@@ -599,15 +704,16 @@ def build_export_rows(
                                         name_s=name_s,
                                         inn2_s=inn2_s,
                                         org2_s=org2_s,
-                                    program_name=frag,
-                                    registry_id=gid,
+                                        program_name=frag,
+                                        registry_id=gid,
+                                    )
                                 )
-                            )
                             continue
-                        for frag in parts:
+                        for frag, v_position in entries:
                             frag = (frag or "").strip()
                             if not frag:
                                 continue
+                            row_position = (v_position or "").strip() or position
                             gid = _registry_id_from_v(frag, v_rows)
                             out.append(
                                 _make_row(
@@ -616,7 +722,7 @@ def build_export_rows(
                                     fn=fn,
                                     pt=pt,
                                     snils=snils,
-                                    position=position,
+                                    position=row_position,
                                     date_s=date_s,
                                     proto_no=proto_no,
                                     tp=tp,

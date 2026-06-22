@@ -3052,11 +3052,16 @@ class ProtocolApp(tk.Tk):
             pn_fmt = format_protocol_number_for_template(protocol_no, date_str)
             if not (pn_fmt or "").strip():
                 pn_fmt = (protocol_no or "").strip()
+            v_combo = self._v_prof_combo_kwargs()
             meta_json = build_protocol_export_meta_json(
                 program_keys,
                 program_titles,
                 protocol_no_formatted=pn_fmt,
                 persons_raw=persons_raw,
+                persons_row_source=persons_b_src,
+                face_sheet_profession=self._face_sheet_profession(),
+                v_prof_enabled_by_fio=v_combo.get("v_prof_enabled_by_fio"),  # type: ignore[arg-type]
+                v_prof_main_by_fio=v_combo.get("v_prof_main_by_fio"),  # type: ignore[arg-type]
             )
             save_protocol(
                 fio_summary,
@@ -3250,11 +3255,16 @@ class ProtocolApp(tk.Tk):
                     emp_persons = raw_employee_rows_same_fio_as(raw_selection_b, emp)
                     keys_i, titles_i = self._collect_program_keys_and_titles(emp_persons)
                     topic_db = "; ".join(titles_i) if titles_i else theme
+                    v_combo = self._v_prof_combo_kwargs()
                     meta_json = build_protocol_export_meta_json(
                         keys_i,
                         titles_i,
                         protocol_no_formatted=pn_fmt,
                         persons_raw=emp_persons,
+                        persons_row_source=raw_selection_b,
+                        face_sheet_profession=self._face_sheet_profession(),
+                        v_prof_enabled_by_fio=v_combo.get("v_prof_enabled_by_fio"),  # type: ignore[arg-type]
+                        v_prof_main_by_fio=v_combo.get("v_prof_main_by_fio"),  # type: ignore[arg-type]
                     )
                     save_protocol(
                         (emp.fio or "").strip(),
