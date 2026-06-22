@@ -46,6 +46,8 @@ SETTING_COMMISSION_VENUE_SUBDIVISION = "commission_venue_subdivision"
 SETTING_COMMISSION_ORDER_APPROVER = "commission_order_approver"
 SETTING_TECH_COMMISSION_VENUE_SUBDIVISION = "tech_commission_venue_subdivision"
 SETTING_TECH_COMMISSION_ORDER_APPROVER = "tech_commission_order_approver"
+SETTING_COMMISSION_ACTIVE_PROFILE_OT = "commission_active_profile_name_ot"
+SETTING_COMMISSION_ACTIVE_PROFILE_TECH = "commission_active_profile_name_tech"
 # Путь к .docx шаблону тех. протокола (пусто — default_protocol_tehnicheskiy.docx из папки программы).
 SETTING_TECH_PROTOCOL_TEMPLATE_DOCX = "tech_protocol_template_docx"
 # «1» — при запуске включать защиту стандартных шаблонов в папке программы (см. docx_template_protection).
@@ -263,6 +265,217 @@ def save_commission_state_to_db(
             ensure_ascii=False,
         ),
     )
+
+
+def ensure_commission_profiles_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS commission_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            order_no TEXT NOT NULL DEFAULT '',
+            order_date TEXT NOT NULL DEFAULT '',
+            venue_subdivision TEXT NOT NULL DEFAULT '',
+            order_approver TEXT NOT NULL DEFAULT '',
+            chair_json TEXT NOT NULL DEFAULT '',
+            members_json TEXT NOT NULL DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(kind, name)
+        )
+        """
+    )
+
+
+def _active_commission_profile_setting_key(kind: str) -> str:
+    if kind == COMMISSION_KIND_TECH:
+        return SETTING_COMMISSION_ACTIVE_PROFILE_TECH
+    return SETTING_COMMISSION_ACTIVE_PROFILE_OT
+
+
+def set_active_commission_profile_name(name: str, *, kind: str = COMMISSION_KIND_OT) -> None:
+    _app_setting_set(_active_commission_profile_setting_key(kind), (name or "").strip())
+
+
+def get_active_commission_profile_name(kind: str = COMMISSION_KIND_OT) -> str:
+    return _app_setting_get(_active_commission_profile_setting_key(kind), "").strip()
+
+
+def list_commission_profile_names(kind: str = COMMISSION_KIND_OT) -> list[str]:
+    k = (kind or COMMISSION_KIND_OT).strip() or COMMISSION_KIND_OT
+    with sqlite3.connect(database_path()) as conn:
+        ensure_commission_profiles_table(conn)
+        cur = conn.execute(
+            """
+            SELECT name FROM commission_profiles
+            WHERE kind = ?
+            ORDER BY name COLLATE NOCASE
+            """,
+            (k,),
+        )
+        return [str(row[0]) for row in cur.fetchall() if row and row[0]]
+
+
+def save_commission_profile(
+    name: str,
+    kind: str,
+    *,
+    order_no: str,
+    order_date: str,
+    chair: EmployeeRecord | None,
+    members: list[EmployeeRecord],
+    venue_subdivision: str = "",
+    order_approver: str = "",
+) -> None:
+    profile_name = (name or "").strip()
+    if not profile_name:
+        raise ValueError("Укажите название комиссии (подразделение).")
+    k = (kind or COMMISSION_KIND_OT).strip() or COMMISSION_KIND_OT
+    chair_json = ""
+    if chair is not None and (chair.fio or "").strip():
+        chair_json = json.dumps(asdict(chair), ensure_ascii=False)
+    members_json = json.dumps(
+        [asdict(m) for m in members if (m.fio or "").strip()],
+        ensure_ascii=False,
+    )
+    with sqlite3.connect(database_path()) as conn:
+        ensure_commission_profiles_table(conn)
+        conn.execute(
+            """
+            INSERT INTO commission_profiles (
+                name, kind, order_no, order_date, venue_subdivision, order_approver,
+                chair_json, members_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(kind, name) DO UPDATE SET
+                order_no = excluded.order_no,
+                order_date = excluded.order_date,
+                venue_subdivision = excluded.venue_subdivision,
+                order_approver = excluded.order_approver,
+                chair_json = excluded.chair_json,
+                members_json = excluded.members_json,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                profile_name,
+                k,
+                (order_no or "").strip(),
+                (order_date or "").strip(),
+                (venue_subdivision or "").strip(),
+                (order_approver or "").strip(),
+                chair_json,
+                members_json,
+            ),
+        )
+        conn.commit()
+    set_active_commission_profile_name(profile_name, kind=k)
+
+
+def load_commission_profile(
+    name: str,
+    kind: str = COMMISSION_KIND_OT,
+) -> dict[str, Any] | None:
+    profile_name = (name or "").strip()
+    if not profile_name:
+        return None
+    k = (kind or COMMISSION_KIND_OT).strip() or COMMISSION_KIND_OT
+    with sqlite3.connect(database_path()) as conn:
+        ensure_commission_profiles_table(conn)
+        row = conn.execute(
+            """
+            SELECT order_no, order_date, venue_subdivision, order_approver,
+                   chair_json, members_json
+            FROM commission_profiles
+            WHERE kind = ? AND name = ?
+            """,
+            (k, profile_name),
+        ).fetchone()
+    if not row:
+        return None
+    chair: EmployeeRecord | None = None
+    if (row[4] or "").strip():
+        try:
+            c = _employee_from_settings_dict(json.loads(row[4]))
+            if c.fio.strip():
+                chair = c
+        except (json.JSONDecodeError, TypeError, ValueError):
+            chair = None
+    members: list[EmployeeRecord] = []
+    if (row[5] or "").strip():
+        try:
+            arr = json.loads(row[5])
+            if isinstance(arr, list):
+                for item in arr:
+                    em = _employee_from_settings_dict(item)
+                    if em.fio.strip():
+                        members.append(em)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    return {
+        "name": profile_name,
+        "order_no": str(row[0] or ""),
+        "order_date": str(row[1] or ""),
+        "venue_subdivision": str(row[2] or ""),
+        "order_approver": str(row[3] or ""),
+        "chair": chair,
+        "members": members,
+    }
+
+
+def delete_commission_profile(name: str, kind: str = COMMISSION_KIND_OT) -> None:
+    profile_name = (name or "").strip()
+    if not profile_name:
+        return
+    k = (kind or COMMISSION_KIND_OT).strip() or COMMISSION_KIND_OT
+    with sqlite3.connect(database_path()) as conn:
+        ensure_commission_profiles_table(conn)
+        conn.execute(
+            "DELETE FROM commission_profiles WHERE kind = ? AND name = ?",
+            (k, profile_name),
+        )
+        conn.commit()
+    if get_active_commission_profile_name(k) == profile_name:
+        set_active_commission_profile_name("", kind=k)
+
+
+def migrate_legacy_commission_profiles(conn: sqlite3.Connection) -> None:
+    """Перенос единственной комиссии из app_settings в именованный профиль."""
+    ensure_commission_profiles_table(conn)
+    for kind in (COMMISSION_KIND_OT, COMMISSION_KIND_TECH):
+        cnt = conn.execute(
+            "SELECT COUNT(*) FROM commission_profiles WHERE kind = ?",
+            (kind,),
+        ).fetchone()
+        if cnt and int(cnt[0]) > 0:
+            continue
+        order_no, order_date, chair, members = load_commission_state_from_db(kind)
+        venue, approver = load_commission_protocol_context_from_db(kind)
+        if not any(
+            [
+                (order_no or "").strip(),
+                (order_date or "").strip(),
+                chair,
+                members,
+                (venue or "").strip(),
+                (approver or "").strip(),
+            ]
+        ):
+            continue
+        default_name = (venue.splitlines()[0].strip() if venue.strip() else "") or "Основная"
+        try:
+            save_commission_profile(
+                default_name,
+                kind,
+                order_no=order_no,
+                order_date=order_date,
+                chair=chair,
+                members=members,
+                venue_subdivision=venue,
+                order_approver=approver,
+            )
+        except ValueError:
+            pass
+        if not get_active_commission_profile_name(kind):
+            set_active_commission_profile_name(default_name, kind=kind)
 
 
 SETTING_MINTRUD_INN_EMPLOYER = "mintrud_inn_employer"
@@ -624,28 +837,62 @@ class CommissionAdminPanel(ttk.Labelframe):
         self._mirror_pool_state = mirror_pool_state
         g = {"padx": 5, "pady": 5}
         self.columnconfigure(1, weight=1)
+        R = 3
 
-        ttk.Label(self, text="№ приказа о комиссии:").grid(row=0, column=0, sticky=tk.W, **g)
+        ttk.Label(
+            self,
+            text="Сохранённая комиссия (название / подразделение):",
+        ).grid(row=0, column=0, sticky=tk.W, **g)
+        prof_fr = ttk.Frame(self)
+        prof_fr.grid(row=0, column=1, sticky=tk.EW, **g)
+        prof_fr.columnconfigure(0, weight=1)
+        self.var_commission_profile = tk.StringVar(value="")
+        self.cmb_commission_profile = ttk.Combobox(
+            prof_fr,
+            textvariable=self.var_commission_profile,
+            width=46,
+        )
+        self.cmb_commission_profile.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6))
+        self.cmb_commission_profile.bind("<<ComboboxSelected>>", self._on_profile_selected)
+        prof_btns = ttk.Frame(self)
+        prof_btns.grid(row=1, column=0, columnspan=2, sticky=tk.W, padx=g["padx"])
+        ttk.Button(prof_btns, text="Загрузить", command=self._load_selected_profile).grid(
+            row=0, column=0, padx=(0, 6)
+        )
+        ttk.Button(prof_btns, text="Удалить профиль", command=self._delete_profile).grid(
+            row=0, column=1, padx=(0, 6)
+        )
+        ttk.Label(
+            self,
+            text=(
+                "Пример названия: «НПС и ЦТТ». Сохранение ниже обновляет выбранный профиль "
+                "и подставляет его в протокол."
+            ),
+            wraplength=480,
+            font=("Segoe UI", 8),
+        ).grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=g["padx"], pady=(0, g["pady"]))
+
+        ttk.Label(self, text="№ приказа о комиссии:").grid(row=R + 0, column=0, sticky=tk.W, **g)
         self.entry_commission_order_no = ttk.Entry(self, width=50)
-        self.entry_commission_order_no.grid(row=0, column=1, sticky=tk.EW, **g)
+        self.entry_commission_order_no.grid(row=R + 0, column=1, sticky=tk.EW, **g)
 
-        ttk.Label(self, text="Дата приказа (ДД.ММ.ГГГГ):").grid(row=1, column=0, sticky=tk.W, **g)
+        ttk.Label(self, text="Дата приказа (ДД.ММ.ГГГГ):").grid(row=R + 1, column=0, sticky=tk.W, **g)
         self.entry_commission_order_date = ttk.Entry(self, width=50)
-        self.entry_commission_order_date.grid(row=1, column=1, sticky=tk.EW, **g)
+        self.entry_commission_order_date.grid(row=R + 1, column=1, sticky=tk.EW, **g)
 
         ttk.Label(
             self,
             text="Подразделение (место проверки знаний):",
-        ).grid(row=2, column=0, sticky=tk.NW, **g)
+        ).grid(row=R + 2, column=0, sticky=tk.NW, **g)
         self.txt_commission_venue = tk.Text(self, height=3, width=52, font=("Segoe UI", 10), wrap=tk.WORD)
-        self.txt_commission_venue.grid(row=2, column=1, sticky=tk.EW, **g)
+        self.txt_commission_venue.grid(row=R + 2, column=1, sticky=tk.EW, **g)
 
         ttk.Label(
             self,
             text='В соответствии с приказом (кем утверждён, без этих слов):',
-        ).grid(row=3, column=0, sticky=tk.W, **g)
+        ).grid(row=R + 3, column=0, sticky=tk.W, **g)
         self.entry_commission_order_approver = ttk.Entry(self, width=50)
-        self.entry_commission_order_approver.grid(row=3, column=1, sticky=tk.EW, **g)
+        self.entry_commission_order_approver.grid(row=R + 3, column=1, sticky=tk.EW, **g)
 
         ttk.Label(
             self,
@@ -656,7 +903,7 @@ class CommissionAdminPanel(ttk.Labelframe):
             ),
             wraplength=480,
             font=("Segoe UI", 8),
-        ).grid(row=4, column=0, columnspan=2, sticky=tk.W, padx=g["padx"], pady=(2, g["pady"]))
+        ).grid(row=R + 4, column=0, columnspan=2, sticky=tk.W, padx=g["padx"], pady=(2, g["pady"]))
 
         ttk.Label(
             self,
@@ -666,10 +913,10 @@ class CommissionAdminPanel(ttk.Labelframe):
                 "В списке — «ФИО — должность», без повторов."
             ),
             wraplength=480,
-        ).grid(row=5, column=0, columnspan=2, sticky=tk.W, padx=g["padx"], pady=(8, g["pady"]))
+        ).grid(row=R + 5, column=0, columnspan=2, sticky=tk.W, padx=g["padx"], pady=(8, g["pady"]))
 
         pool_fr = ttk.Frame(self)
-        pool_fr.grid(row=6, column=0, columnspan=2, sticky=tk.NSEW, pady=(4, 0))
+        pool_fr.grid(row=R + 6, column=0, columnspan=2, sticky=tk.NSEW, pady=(4, 0))
         pool_fr.columnconfigure(0, weight=1)
         sb_pool = ttk.Scrollbar(pool_fr)
         sb_pool.grid(row=0, column=1, sticky=tk.NS)
@@ -684,7 +931,7 @@ class CommissionAdminPanel(ttk.Labelframe):
         sb_pool.configure(command=self.list_commission_pool.yview)
 
         pool_btns = ttk.Frame(self)
-        pool_btns.grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
+        pool_btns.grid(row=R + 7, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
         ttk.Button(
             pool_btns,
             text="Обновить из Excel",
@@ -698,19 +945,19 @@ class CommissionAdminPanel(ttk.Labelframe):
         )
 
         ttk.Label(self, text="Председатель комиссии:").grid(
-            row=8, column=0, sticky=tk.NW, padx=g["padx"], pady=(10, g["pady"])
+            row=R + 8, column=0, sticky=tk.NW, padx=g["padx"], pady=(10, g["pady"])
         )
         ch_fr = ttk.Frame(self)
-        ch_fr.grid(row=8, column=1, sticky=tk.EW, padx=g["padx"], pady=(10, g["pady"]))
+        ch_fr.grid(row=R + 8, column=1, sticky=tk.EW, padx=g["padx"], pady=(10, g["pady"]))
         self.lbl_commission_chair = ttk.Label(ch_fr, text="— не выбран —", wraplength=420)
         self.lbl_commission_chair.grid(row=0, column=0, sticky=tk.W)
         ttk.Button(ch_fr, text="Сбросить", command=self._clear_chair, width=10).grid(
             row=0, column=1, sticky=tk.E, padx=(8, 0)
         )
 
-        ttk.Label(self, text="Члены комиссии:").grid(row=9, column=0, sticky=tk.NW, **g)
+        ttk.Label(self, text="Члены комиссии:").grid(row=R + 9, column=0, sticky=tk.NW, **g)
         mem_fr = ttk.Frame(self)
-        mem_fr.grid(row=9, column=1, sticky=tk.EW)
+        mem_fr.grid(row=R + 9, column=1, sticky=tk.EW)
         mem_fr.columnconfigure(0, weight=1)
         sb_mem = ttk.Scrollbar(mem_fr)
         sb_mem.grid(row=0, column=1, sticky=tk.NS)
@@ -724,7 +971,7 @@ class CommissionAdminPanel(ttk.Labelframe):
         self.list_commission_members.grid(row=0, column=0, sticky=tk.NSEW)
         sb_mem.configure(command=self.list_commission_members.yview)
         mem_btns = ttk.Frame(self)
-        mem_btns.grid(row=10, column=1, sticky=tk.W, pady=(4, 0))
+        mem_btns.grid(row=R + 10, column=1, sticky=tk.W, pady=(4, 0))
         ttk.Button(mem_btns, text="Удалить выбранного из членов", command=self._remove_member).grid(
             row=0, column=0, padx=(0, 8)
         )
@@ -736,7 +983,7 @@ class CommissionAdminPanel(ttk.Labelframe):
             self,
             text="Сохранить приказ и состав в базу данных",
             command=self._save_to_db,
-        ).grid(row=11, column=0, columnspan=2, sticky=tk.W, pady=(12, 0))
+        ).grid(row=R + 11, column=0, columnspan=2, sticky=tk.W, pady=(12, 0))
 
         for w in (
             self.entry_commission_order_no,
@@ -752,8 +999,97 @@ class CommissionAdminPanel(ttk.Labelframe):
         except tk.TclError:
             pass
 
-        self.load_from_db_into_ui()
+        self._refresh_profile_combobox()
+        active = get_active_commission_profile_name(self._commission_kind)
+        if active and load_commission_profile(active, self._commission_kind):
+            self.var_commission_profile.set(active)
+            self._apply_profile_to_ui(active, show_message=False)
+        else:
+            self.load_from_db_into_ui()
         self.refresh_pool_display()
+
+    def _refresh_profile_combobox(self) -> None:
+        names = list_commission_profile_names(self._commission_kind)
+        self.cmb_commission_profile["values"] = names
+
+    def _apply_profile_to_ui(self, name: str, *, show_message: bool = True) -> None:
+        prof = load_commission_profile(name, self._commission_kind)
+        if prof is None:
+            if show_message:
+                messagebox.showinfo(
+                    "Комиссия",
+                    f"Профиль «{name}» не найден.",
+                    parent=self._dialog_parent,
+                )
+            return
+        self.entry_commission_order_no.delete(0, tk.END)
+        self.entry_commission_order_no.insert(0, prof["order_no"])
+        self.entry_commission_order_date.delete(0, tk.END)
+        self.entry_commission_order_date.insert(0, prof["order_date"])
+        self.txt_commission_venue.delete("1.0", tk.END)
+        if prof["venue_subdivision"]:
+            self.txt_commission_venue.insert("1.0", prof["venue_subdivision"])
+        self.entry_commission_order_approver.delete(0, tk.END)
+        self.entry_commission_order_approver.insert(0, prof["order_approver"])
+        self._state.chair = prof["chair"]
+        self._state.members = list(prof["members"])
+        self._refresh_chair_label()
+        self._refresh_members_listbox()
+        try:
+            save_commission_state_to_db(
+                prof["order_no"],
+                prof["order_date"],
+                prof["chair"],
+                prof["members"],
+                kind=self._commission_kind,
+                venue_subdivision=prof["venue_subdivision"],
+                order_approver=prof["order_approver"],
+            )
+        except sqlite3.Error as e:
+            if show_message:
+                messagebox.showerror("База данных", str(e), parent=self._dialog_parent)
+            return
+        set_active_commission_profile_name(name, kind=self._commission_kind)
+        self.var_commission_profile.set(name)
+
+    def _on_profile_selected(self, _evt: object | None = None) -> None:
+        name = self.var_commission_profile.get().strip()
+        if name:
+            self._apply_profile_to_ui(name, show_message=False)
+
+    def _load_selected_profile(self) -> None:
+        name = self.var_commission_profile.get().strip()
+        if not name:
+            messagebox.showinfo(
+                "Комиссия",
+                "Выберите или введите название сохранённой комиссии.",
+                parent=self._dialog_parent,
+            )
+            return
+        self._apply_profile_to_ui(name)
+
+    def _delete_profile(self) -> None:
+        name = self.var_commission_profile.get().strip()
+        if not name:
+            messagebox.showinfo(
+                "Комиссия",
+                "Выберите профиль для удаления.",
+                parent=self._dialog_parent,
+            )
+            return
+        if not messagebox.askyesno(
+            "Комиссия",
+            f"Удалить сохранённый профиль «{name}»?",
+            parent=self._dialog_parent,
+        ):
+            return
+        try:
+            delete_commission_profile(name, self._commission_kind)
+        except sqlite3.Error as e:
+            messagebox.showerror("База данных", str(e), parent=self._dialog_parent)
+            return
+        self.var_commission_profile.set("")
+        self._refresh_profile_combobox()
 
     def _on_refresh_excel_clicked(self) -> None:
         refresh_commission_pool_from_excel(
@@ -878,7 +1214,28 @@ class CommissionAdminPanel(ttk.Labelframe):
         od = self.entry_commission_order_date.get().strip()
         venue = self.txt_commission_venue.get("1.0", tk.END).strip()
         approver = self.entry_commission_order_approver.get().strip()
+        profile_name = self.var_commission_profile.get().strip()
+        if not profile_name:
+            profile_name = venue.splitlines()[0].strip() if venue else ""
+        if not profile_name:
+            messagebox.showinfo(
+                "Комиссия",
+                "Введите название профиля (подразделение) в поле вверху, "
+                "например «НПС и ЦТТ».",
+                parent=self._dialog_parent,
+            )
+            return
         try:
+            save_commission_profile(
+                profile_name,
+                self._commission_kind,
+                order_no=on,
+                order_date=od,
+                chair=self._state.chair,
+                members=self._state.members,
+                venue_subdivision=venue,
+                order_approver=approver,
+            )
             save_commission_state_to_db(
                 on,
                 od,
@@ -891,9 +1248,14 @@ class CommissionAdminPanel(ttk.Labelframe):
         except sqlite3.Error as e:
             messagebox.showerror("База данных", str(e), parent=self._dialog_parent)
             return
+        except ValueError as e:
+            messagebox.showwarning("Комиссия", str(e), parent=self._dialog_parent)
+            return
+        self._refresh_profile_combobox()
+        self.var_commission_profile.set(profile_name)
         msg = (
-            "Приказ и состав комиссии по техническим вопросам сохранены в базе данных."
-            if self._commission_kind == COMMISSION_KIND_TECH
-            else "Приказ и состав комиссии сохранены в базе данных."
+            f"Профиль «{profile_name}» и активная комиссия для протокола сохранены."
+            if self._commission_kind != COMMISSION_KIND_TECH
+            else f"Профиль «{profile_name}» (тех. вопросы) сохранён."
         )
         messagebox.showinfo("Комиссия", msg, parent=self._dialog_parent)

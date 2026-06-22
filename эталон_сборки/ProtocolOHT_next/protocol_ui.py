@@ -63,7 +63,7 @@ from excel_data_cache import (
     save_employees_cache,
     try_load_employees_from_cache,
 )
-from faq_viewer import open_faq_window
+from faq_viewer import open_changelog_window, open_faq_window
 from programs_v_prof import (
     VProfProfessionCandidate,
     match_profession_in_v_prof,
@@ -119,11 +119,11 @@ from protocol_journal import (
     build_protocol_export_meta_json,
     clear_protocol_journal,
     default_journal_registry_export_path,
-    delete_protocol_journal_rows_by_ids,
     export_meta_protocol_no,
     export_protocol_journal_registry,
     format_journal_list_line,
     get_all_protocols,
+    get_protocols_journal_display,
     journal_ids_and_error_for_per_employee_batch,
     save_protocol,
 )
@@ -347,7 +347,7 @@ def _attach_tooltip(widget: tk.Misc, text: str, **kw: Any) -> None:
 
 
 class ProtocolApp(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(self, *, journal_duplicates_removed: int = 0) -> None:
         super().__init__()
         # Не показывать окно до финального geometry — иначе при .exe виден «прыжок» размера.
         self.withdraw()
@@ -406,6 +406,27 @@ class ProtocolApp(tk.Tk):
         self.update_idletasks()
         self._apply_main_window_geometry()
         self.deiconify()
+        if journal_duplicates_removed > 0:
+            self.after(400, lambda: self._maybe_notify_journal_purge(journal_duplicates_removed))
+
+    def _maybe_notify_journal_purge(self, removed: int) -> None:
+        if removed <= 0:
+            return
+        from commission_admin import _app_setting_get, _app_setting_set
+        from protocol_app_info import APP_VERSION
+
+        key = "journal_purge_notice_version"
+        ver = (APP_VERSION or "").strip()
+        if _app_setting_get(key, "").strip() == ver:
+            return
+        _app_setting_set(key, ver)
+        messagebox.showinfo(
+            "Журнал протоколов",
+            f"Из базы удалено устаревших дублей записей: {removed}.\n\n"
+            "При повторном формировании протокола запись в журнале обновляется, "
+            "а не добавляется повторно.",
+            parent=self,
+        )
 
     def _register_clipboard_for_window(self, win: tk.Misc) -> None:
         """Вставка Ctrl+V / ПКМ в полях дополнительного окна."""
@@ -737,6 +758,10 @@ class ProtocolApp(tk.Tk):
         help_m.add_command(
             label="Горячие клавиши…",
             command=self._show_hotkeys_help,
+        )
+        help_m.add_command(
+            label="Журнал доработок…",
+            command=lambda: open_changelog_window(self),
         )
         help_m.add_separator()
         help_m.add_command(
@@ -1837,7 +1862,7 @@ class ProtocolApp(tk.Tk):
         """Окно со списком сохранённых протоколов из SQLite и текстом записи."""
         kind = (journal_kind or PROTOCOL_JOURNAL_KIND_OT).strip() or PROTOCOL_JOURNAL_KIND_OT
         try:
-            rows = get_all_protocols(protocol_kind=kind)
+            rows = get_protocols_journal_display(protocol_kind=kind)
         except sqlite3.Error as e:
             messagebox.showerror("База данных", str(e))
             return
@@ -1917,7 +1942,7 @@ class ProtocolApp(tk.Tk):
         def refresh_list() -> None:
             nonlocal rows
             try:
-                rows = get_all_protocols(protocol_kind=kind)
+                rows = get_protocols_journal_display(protocol_kind=kind)
             except sqlite3.Error as e:
                 messagebox.showerror("База данных", str(e))
                 return
@@ -2132,7 +2157,7 @@ class ProtocolApp(tk.Tk):
     def _open_mintrud_export_window(self) -> None:
         """История журнала: выбор одной или нескольких записей, выгрузка шаблона Excel для реестра Минтруда."""
         try:
-            rows = get_all_protocols(protocol_kind=PROTOCOL_JOURNAL_KIND_OT)
+            rows = get_protocols_journal_display(protocol_kind=PROTOCOL_JOURNAL_KIND_OT)
         except sqlite3.Error as e:
             messagebox.showerror("База данных", str(e))
             return
@@ -2158,7 +2183,10 @@ class ProtocolApp(tk.Tk):
                 "«Шаблон_Минтруд_XSD_УМН.xlsx» в папке с программой (лист «Шаблон»). "
                 "СНИЛС в журнале не хранится; при выгрузке подставляется только из файла сотрудников (Excel) по ФИО. "
                 "Должность — из журнала (метаданные) или из того же файла, если совпало ФИО. "
-                "Реквизиты работодателя и организации 2 — «Минтруд» → «Реквизиты работодателя…»."
+                "Реквизиты работодателя и организации 2 — «Минтруд» → «Реквизиты работодателя…». "
+                "В списке — по одной актуальной записи на протокол (без дублей). "
+                "Повторная выгрузка формирует новый файл из выбранных записей, "
+                "не дополняет ранее сохранённый Excel."
             ),
             wraplength=880,
             font=("Segoe UI", 9),
@@ -2184,16 +2212,31 @@ class ProtocolApp(tk.Tk):
         sb_list.grid(row=0, column=1, sticky=tk.NS)
         sb_list.configure(command=lb.yview)
 
+        lbl_empty = ttk.Label(
+            list_fr,
+            text=(
+                "Записей в журнале пока нет. Сформируйте протокол по охране труда — "
+                "данные попадут в журнал автоматически. Затем нажмите «Обновить список»."
+            ),
+            wraplength=860,
+            foreground="#666666",
+            font=("Segoe UI", 9),
+        )
+
         def refresh_list() -> None:
             nonlocal rows
             try:
-                rows = get_all_protocols(protocol_kind=PROTOCOL_JOURNAL_KIND_OT)
+                rows = get_protocols_journal_display(protocol_kind=PROTOCOL_JOURNAL_KIND_OT)
             except sqlite3.Error as e:
                 messagebox.showerror("База данных", str(e), parent=win)
                 return
             lb.delete(0, tk.END)
-            for r in rows:
-                lb.insert(tk.END, format_journal_list_line(r))
+            if rows:
+                lbl_empty.grid_remove()
+                for r in rows:
+                    lb.insert(tk.END, format_journal_list_line(r))
+            else:
+                lbl_empty.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
 
         def select_all() -> None:
             if lb.size() == 0:
@@ -2228,6 +2271,9 @@ class ProtocolApp(tk.Tk):
                 "Должности и программы — из метаданных протокола (снимок при сохранении в журнал); "
                 "для старых записей без должностей — из файла сотрудников и Programs_base.\n\n"
                 "«Тест пройден»: 1 — удовлетворительно, 0 — неудовлетворительно.\n\n"
+                "Список записей — без дублей (актуальная версия каждого протокола). "
+                "Сохранённый Excel не дополняется автоматически — каждый раз формируется "
+                "из выбранных строк журнала.\n\n"
                 "При необходимости вручную: ID программы в реестре — по инструкции портала "
                 "(например https://akot.rosmintrud.ru/ ).",
             )
@@ -2315,8 +2361,11 @@ class ProtocolApp(tk.Tk):
         )
         ttk.Button(btn_bar, text="Закрыть", command=win.destroy).grid(row=0, column=5)
 
-        for r in rows:
-            lb.insert(tk.END, format_journal_list_line(r))
+        if rows:
+            for r in rows:
+                lb.insert(tk.END, format_journal_list_line(r))
+        else:
+            lbl_empty.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
 
     def pick_template(self) -> None:
         path = filedialog.askopenfilename(
@@ -3172,8 +3221,8 @@ class ProtocolApp(tk.Tk):
             parts: list[str] = []
             if jn:
                 parts.append(
-                    f"В журнале есть записи за эту дату с теми же номерами протокола ({jn} шт.) — "
-                    "они будут удалены и записаны заново."
+                    f"В журнале уже есть записи за эту дату с теми же номерами протокола ({jn} шт.) — "
+                    "они будут обновлены."
                 )
             if journal_fio_notes:
                 lim = 6
@@ -3191,9 +3240,6 @@ class ProtocolApp(tk.Tk):
             if not messagebox.askyesno("Перезапись партии", msg, parent=self):
                 return
             allow_overwrite = True
-
-        if allow_overwrite and journal_ids_replace:
-            delete_protocol_journal_rows_by_ids(journal_ids_replace)
 
         n_ok = 0
         last_doc: Document | None = None

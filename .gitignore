@@ -66,6 +66,7 @@ local/
 .DS_Store
 desktop.ini
 ~$*
+**/.tmp.driveupload/
 
 # Вспомогательные распаковки docx (при необходимости уберите из .gitignore)
 _docx_extract/

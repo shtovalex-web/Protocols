@@ -192,6 +192,13 @@ def main() -> int:
         shutil.copy2(faq_src, data_dir / "FAQ.txt")
         copied.append(f"{DATA_SUBDIR}/FAQ.txt")
 
+    changelog_src = _bundle_src("ЖУРНАЛ_ДОРАБОТОК.md")
+    if changelog_src.is_file():
+        shutil.copy2(changelog_src, ETALON / "ЖУРНАЛ_ДОРАБОТОК.md")
+        shutil.copy2(changelog_src, data_dir / "ЖУРНАЛ_ДОРАБОТОК.md")
+        copied.append("ЖУРНАЛ_ДОРАБОТОК.md")
+        copied.append(f"{DATA_SUBDIR}/ЖУРНАЛ_ДОРАБОТОК.md")
+
     next_src = ROOT / "ProtocolOHT_next"
     next_dst = ETALON / "ProtocolOHT_next"
     if next_src.is_dir():

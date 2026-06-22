@@ -29,9 +29,9 @@ def main() -> None:
     migrate_legacy_from_data_subfolder_to_exe()
     ensure_frozen_default_workbooks()
     install_app_error_logging()
-    init_db()
+    journal_removed = init_db()
     try:
-        app = ProtocolApp()
+        app = ProtocolApp(journal_duplicates_removed=journal_removed)
     except Exception as e:
         import traceback
 
