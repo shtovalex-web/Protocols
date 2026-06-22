@@ -1434,6 +1434,39 @@ def v_program_merged_parts_for_raw_employee(
     return out
 
 
+def v_program_parts_with_professions_for_employee(
+    path: Path,
+    emp: EmployeeRecord,
+    *,
+    face_sheet_profession: str | None = None,
+    persons_row_source: list[EmployeeRecord] | None = None,
+    v_prof_enabled_norm_keys: frozenset[str] | None = None,
+    v_prof_enabled_by_fio: dict[str, frozenset[str]] | None = None,
+    v_prof_main_by_fio: dict[str, str] | None = None,
+) -> list[tuple[str, str]]:
+    """
+    Фрагменты программы «В» с должностью из протокола для каждой строки реестра Минтруда.
+    Возвращает пары (наименование программы, должность).
+    """
+    profs = collect_professions_for_v_prof_lookup(
+        face_sheet_profession=face_sheet_profession,
+        emp=emp,
+        persons_row_source=persons_row_source,
+        v_prof_enabled_norm_keys=v_prof_enabled_norm_keys,
+        v_prof_enabled_by_fio=v_prof_enabled_by_fio,
+        v_prof_main_by_fio=v_prof_main_by_fio,
+    )
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for pr in profs:
+        for part in read_v_prof_row_parts_list(path, pr):
+            nk = _norm_profession_key(part)
+            if nk not in seen:
+                seen.add(nk)
+                out.append((part, pr))
+    return out
+
+
 def v_program_ordered_unique_parts_global(
     path: Path,
     persons_raw: list[EmployeeRecord],
