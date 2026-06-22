@@ -14,7 +14,6 @@ from typing import Any
 from employees_io import EmployeeRecord
 from protocol_paths import database_path
 
-# Вид записи в журнале protocols (колонка protocol_kind).
 PROTOCOL_JOURNAL_KIND_OT = "OT"
 PROTOCOL_JOURNAL_KIND_TECH = "TECH"
 
@@ -83,8 +82,29 @@ def save_protocol(
     *,
     protocol_kind: str = PROTOCOL_JOURNAL_KIND_OT,
 ) -> int:
+    """Сохранить запись журнала; при том же №/дате/виде — обновить, не дублировать."""
     kind = (protocol_kind or PROTOCOL_JOURNAL_KIND_OT).strip() or PROTOCOL_JOURNAL_KIND_OT
     with sqlite3.connect(database_path()) as conn:
+        existing_id = _find_protocol_journal_id_for_update(
+            conn,
+            protocol_kind=kind,
+            date=date,
+            export_meta_json=export_meta_json,
+            fio=fio,
+        )
+        if existing_id is not None:
+            conn.execute(
+                """
+                UPDATE protocols
+                SET fio = ?, topic = ?, date = ?, grade = ?, content = ?,
+                    export_meta_json = ?, protocol_kind = ?,
+                    created_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (fio, topic, date, grade, content, export_meta_json, kind, existing_id),
+            )
+            conn.commit()
+            return existing_id
         cur = conn.execute(
             """
             INSERT INTO protocols (fio, topic, date, grade, content, export_meta_json, protocol_kind)
@@ -94,6 +114,106 @@ def save_protocol(
         )
         conn.commit()
         return int(cur.lastrowid)
+
+
+def _find_protocol_journal_id_for_update(
+    conn: sqlite3.Connection,
+    *,
+    protocol_kind: str,
+    date: str,
+    export_meta_json: str | None,
+    fio: str,
+) -> int | None:
+    """Ключ перезаписи: вид + дата + № протокола из meta; иначе вид + дата + ФИО."""
+    kind = (protocol_kind or PROTOCOL_JOURNAL_KIND_OT).strip() or PROTOCOL_JOURNAL_KIND_OT
+    date_s = (date or "").strip()
+    pn = export_meta_protocol_no(export_meta_json)
+    if kind == PROTOCOL_JOURNAL_KIND_TECH:
+        cur = conn.execute(
+            """
+            SELECT id, fio, export_meta_json FROM protocols
+            WHERE date = ? AND protocol_kind = ?
+            """,
+            (date_s, PROTOCOL_JOURNAL_KIND_TECH),
+        )
+    else:
+        cur = conn.execute(
+            """
+            SELECT id, fio, export_meta_json FROM protocols
+            WHERE date = ? AND COALESCE(protocol_kind, ?) = ?
+            """,
+            (date_s, PROTOCOL_JOURNAL_KIND_OT, PROTOCOL_JOURNAL_KIND_OT),
+        )
+    rows = cur.fetchall()
+    if pn:
+        for rid, _fio, meta in rows:
+            if export_meta_protocol_no(meta) == pn:
+                return int(rid)
+    nf = _norm_fio_journal_key(fio)
+    if nf:
+        for rid, row_fio, _meta in rows:
+            if _norm_fio_journal_key(row_fio or "") == nf:
+                return int(rid)
+    return None
+
+
+def _journal_row_dedupe_key(record: dict[str, Any]) -> tuple[str, str, str]:
+    """Ключ уникальности записи журнала (как при upsert в save_protocol)."""
+    kind = (record.get("protocol_kind") or PROTOCOL_JOURNAL_KIND_OT).strip() or PROTOCOL_JOURNAL_KIND_OT
+    date_s = (record.get("date") or "").strip()
+    pn = export_meta_protocol_no(record.get("export_meta_json"))
+    if pn:
+        return (kind, date_s, f"no:{pn.casefold()}")
+    nf = _norm_fio_journal_key(record.get("fio") or "")
+    return (kind, date_s, f"fio:{nf}")
+
+
+def dedupe_journal_records_for_export(
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Одна запись журнала на протокол (оставляем с наибольшим id)."""
+    best: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for r in records:
+        key = _journal_row_dedupe_key(r)
+        prev = best.get(key)
+        if prev is None or int(r.get("id") or 0) > int(prev.get("id") or 0):
+            best[key] = r
+    if not best:
+        return list(records)
+    out = list(best.values())
+    out.sort(key=lambda row: int(row.get("id") or 0), reverse=True)
+    return out
+
+
+def get_protocols_journal_display(protocol_kind: str | None = None) -> list[dict[str, Any]]:
+    """Записи журнала для списков в интерфейсе — без дублей (актуальная версия протокола)."""
+    return dedupe_journal_records_for_export(get_all_protocols(protocol_kind))
+
+
+def purge_duplicate_protocol_journal_rows(db_path: Path | None = None) -> int:
+    """Удалить из БД старые дубликаты журнала, оставив запись с наибольшим id."""
+    path = db_path if db_path is not None else database_path()
+    with sqlite3.connect(path) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(
+            "SELECT id, fio, date, export_meta_json, protocol_kind FROM protocols"
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        keep_ids: set[int] = set()
+        best_by_key: dict[tuple[str, str, str], int] = {}
+        for r in rows:
+            rid = int(r["id"])
+            key = _journal_row_dedupe_key(r)
+            prev = best_by_key.get(key)
+            if prev is None or rid > prev:
+                best_by_key[key] = rid
+        keep_ids.update(best_by_key.values())
+        delete_ids = [int(r["id"]) for r in rows if int(r["id"]) not in keep_ids]
+        if not delete_ids:
+            return 0
+        conn.executemany("DELETE FROM protocols WHERE id = ?", [(i,) for i in delete_ids])
+        conn.commit()
+        return len(delete_ids)
 
 
 def get_all_protocols(protocol_kind: str | None = None) -> list[dict[str, Any]]:
@@ -406,8 +526,7 @@ def journal_ids_and_error_for_per_employee_batch(
 ) -> tuple[list[int], str | None, list[str]]:
     """
     По дате и планируемой партии (ФИО, полный № как в export_meta_json):
-    все строки журнала с этими номерами протокола за эту дату — кандидаты на удаление при перезаписи,
-    в том числе если раньше № был у другого ФИО (повторная выгрузка / смена порядка в партии).
+    строки журнала с этими номерами за дату — для предупреждения о перезаписи (upsert).
     err — только если в одной партии одному номеру соответствуют разные ФИО.
     notes — краткие предупреждения для окна подтверждения перезаписи.
     """

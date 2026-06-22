@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Окно справки: загрузка FAQ (FAQ.txt / FAQ.md) и поиск по тексту."""
+"""Окно справки: FAQ, журнал доработок и поиск по тексту."""
 
 from __future__ import annotations
 
@@ -13,31 +13,52 @@ from clipboard_ui import register_clipboard_window
 from protocol_embedded_assets import apply_embedded_window_icon_from_parent
 
 FAQ_CANDIDATE_NAMES = ("FAQ.txt", "FAQ.md")
+CHANGELOG_CANDIDATE_NAMES = ("ЖУРНАЛ_ДОРАБОТОК.md",)
 
 
-def faq_file_path() -> Path:
+def _first_existing_in_bundle(names: tuple[str, ...]) -> Path | None:
     base = application_bundle_dir()
-    for name in FAQ_CANDIDATE_NAMES:
+    for name in names:
         p = base / name
         if p.is_file():
             return p
-    return base / FAQ_CANDIDATE_NAMES[0]
+    root = Path(__file__).resolve().parent
+    for name in names:
+        p = root / "bundle" / name
+        if p.is_file():
+            return p
+    return None
 
 
-def open_faq_window(parent: tk.Misc, *, title: str = "Справка и FAQ") -> None:
-    path = faq_file_path()
+def faq_file_path() -> Path:
+    p = _first_existing_in_bundle(FAQ_CANDIDATE_NAMES)
+    if p is not None:
+        return p
+    return application_bundle_dir() / FAQ_CANDIDATE_NAMES[0]
+
+
+def changelog_file_path() -> Path | None:
+    return _first_existing_in_bundle(CHANGELOG_CANDIDATE_NAMES)
+
+
+def open_text_help_window(
+    parent: tk.Misc,
+    path: Path,
+    *,
+    title: str,
+    missing_hint: str = "",
+) -> None:
     if not path.is_file():
         messagebox.showerror(
             title,
-            "Не найден файл справки (FAQ.txt или FAQ.md) в папке комплекта программы:\n"
-            f"{application_bundle_dir()}",
+            missing_hint or f"Не найден файл:\n{path}",
             parent=parent,
         )
         return
     try:
         body_text = path.read_text(encoding="utf-8")
     except OSError as e:
-        messagebox.showerror(title, f"Не удалось прочитать справку:\n{e}", parent=parent)
+        messagebox.showerror(title, f"Не удалось прочитать файл:\n{e}", parent=parent)
         return
 
     win = tk.Toplevel(parent)
@@ -149,3 +170,29 @@ def open_faq_window(parent: tk.Misc, *, title: str = "Справка и FAQ") ->
     ent.focus_set()
     register_clipboard_window(win)
     win.lift()
+
+
+def open_faq_window(parent: tk.Misc, *, title: str = "Справка и FAQ") -> None:
+    path = faq_file_path()
+    open_text_help_window(
+        parent,
+        path,
+        title=title,
+        missing_hint=(
+            "Не найден файл справки (FAQ.txt или FAQ.md) в папке комплекта программы:\n"
+            f"{application_bundle_dir()}"
+        ),
+    )
+
+
+def open_changelog_window(parent: tk.Misc) -> None:
+    path = changelog_file_path()
+    if path is None:
+        messagebox.showerror(
+            "Журнал доработок",
+            "Не найден файл ЖУРНАЛ_ДОРАБОТОК.md в папке комплекта программы:\n"
+            f"{application_bundle_dir()}",
+            parent=parent,
+        )
+        return
+    open_text_help_window(parent, path, title="Журнал доработок по версиям")
