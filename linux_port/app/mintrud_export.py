@@ -878,6 +878,75 @@ def build_export_rows(
     return out
 
 
+def export_row_dedupe_key(row: dict[str, Any]) -> tuple[str, ...]:
+    """Ключ строки выгрузки Минтруд для слияния без дублей."""
+    return (
+        (row.get("protocol_no") or "").strip().casefold(),
+        format_mintrud_iso_date(row.get("doc_date")),
+        (row.get("last_name") or "").strip().casefold(),
+        (row.get("first_name") or "").strip().casefold(),
+        (row.get("patronymic") or "").strip().casefold(),
+        (row.get("program_name") or "").strip().casefold(),
+    )
+
+
+def dedupe_export_data_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Убрать дубликаты строк (последняя побеждает)."""
+    merged: dict[tuple[str, ...], dict[str, Any]] = {}
+    for row in rows:
+        merged[export_row_dedupe_key(row)] = row
+    return list(merged.values())
+
+
+def merge_export_data_rows(
+    existing: list[dict[str, Any]],
+    new_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Объединить выгрузку: новые строки перезаписывают совпадающие по ключу.
+
+    Сейчас не используется при сохранении Excel (выгрузка только из выбранных записей журнала);
+    оставлено для тестов и возможного режима «дополнить файл» в будущем.
+    """
+    merged: dict[tuple[str, ...], dict[str, Any]] = {
+        export_row_dedupe_key(r): dict(r) for r in existing
+    }
+    for row in new_rows:
+        merged[export_row_dedupe_key(row)] = dict(row)
+    return list(merged.values())
+
+
+def read_data_rows_from_mintrud_sheet(ws: Any, field_col: dict[str, int]) -> list[dict[str, Any]]:
+    """Прочитать уже заполненные строки из сохранённого шаблона Минтруд."""
+    rows: list[dict[str, Any]] = []
+    if not field_col:
+        return rows
+    max_row = int(ws.max_row or HEADER_ROW)
+    for r in range(HEADER_ROW + 1, max_row + 1):
+        row_data: dict[str, Any] = {}
+        has_data = False
+        for field, col in field_col.items():
+            val = ws.cell(row=r, column=col).value
+            if val is None or (isinstance(val, str) and not val.strip()):
+                row_data[field] = None
+                continue
+            has_data = True
+            if field == "doc_date":
+                row_data[field] = format_mintrud_iso_date(val)
+            elif field == "test_passed":
+                if isinstance(val, bool):
+                    row_data[field] = 1 if val else 0
+                elif isinstance(val, (int, float)):
+                    row_data[field] = int(val)
+                else:
+                    s = str(val).strip().lower()
+                    row_data[field] = 1 if s in {"1", "да", "true", "yes"} else 0
+            else:
+                row_data[field] = str(val).strip() if not isinstance(val, str) else val.strip()
+        if has_data:
+            rows.append(row_data)
+    return rows
+
+
 def _normalize_header_cell(value: object) -> str:
     s = str(value or "").strip().lower().replace("ё", "е")
     return re.sub(r"\s+", " ", s)
@@ -1135,6 +1204,9 @@ def write_mintrud_template_xlsx(
         programs_excel_path=programs_excel_path,
         v_parts_for_employee=v_parts_for_employee,
     )
+    data_rows = dedupe_export_data_rows(data_rows)
+
+    out_path = Path(path).expanduser().resolve()
 
     scan_cols = max(int(ws.max_column or 0), 40)
     if ws.max_row > HEADER_ROW:
@@ -1167,7 +1239,6 @@ def write_mintrud_template_xlsx(
         ws, header_row=HEADER_ROW, last_data_row=last_row, last_col=last_col
     )
 
-    out_path = Path(path).expanduser().resolve()
     wb.save(out_path)
     _merge_mintrud_workbook_from_template(tpl, out_path)
     xml_path = out_path.with_suffix(".xml")
