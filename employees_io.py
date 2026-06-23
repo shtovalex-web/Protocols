@@ -17,6 +17,15 @@ class EmployeeExcelError(Exception):
     """Ошибка чтения списка сотрудников из Excel."""
 
 
+def _workbook_path_for_openpyxl(path: Path) -> Path:
+    from bundle_integration import BundleOfficeConvertError, resolve_openpyxl_workbook_path
+
+    try:
+        return resolve_openpyxl_workbook_path(path)
+    except BundleOfficeConvertError as e:
+        raise EmployeeExcelError(str(e)) from e
+
+
 @dataclass
 class EmployeeRecord:
     """Строка сотрудника из листа rabotnik (ФИО, должность, подразделение, совмещаемая профессия, СНИЛС)."""
@@ -307,6 +316,8 @@ def load_employees_from_excel(path: Path, *, sheet_name: str = EMPLOYEES_SHEET_N
     if not path.is_file():
         raise EmployeeExcelError(f"Файл не найден:\n{path}")
 
+    path = _workbook_path_for_openpyxl(path)
+
     try:
         wb = load_workbook(path, read_only=True, data_only=True)
     except Exception as e:
@@ -428,6 +439,8 @@ def load_commission_from_excel(path: Path) -> list[EmployeeRecord]:
     if not path.is_file():
         raise EmployeeExcelError(f"Файл не найден:\n{path}")
 
+    path = _workbook_path_for_openpyxl(path)
+
     try:
         wb = load_workbook(path, read_only=True, data_only=True)
     except Exception as e:
@@ -542,6 +555,8 @@ def load_all_tech_v_programs_from_excel(path: Path) -> list[TechVProgramInfo]:
 
     if not path.is_file():
         raise EmployeeExcelError(f"Файл программ не найден:\n{path}")
+
+    path = _workbook_path_for_openpyxl(path)
 
     try:
         wb = load_workbook(path, read_only=True, data_only=True)
@@ -818,6 +833,8 @@ def copy_program_sheets_from_workbook(source: Path, dest: Path) -> list[str]:
     dest = Path(dest)
     if not source.is_file():
         raise EmployeeExcelError(f"Файл не найден:\n{source}")
+
+    source = _workbook_path_for_openpyxl(source)
 
     swb = load_workbook(source, data_only=True, read_only=True)
     try:

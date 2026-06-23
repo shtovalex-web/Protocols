@@ -1,0 +1,10 @@
+#!/bin/sh
+# Перед commit: обновить linux_port/app и ProtocolOOT_linux_build, если в индексе затронуты исходники.
+if command -v py >/dev/null 2>&1; then
+  py -3 tools/sync_linux_local.py --if-staged --quiet || exit 1
+elif command -v python3 >/dev/null 2>&1; then
+  python3 tools/sync_linux_local.py --if-staged --quiet || exit 1
+elif command -v python >/dev/null 2>&1; then
+  python tools/sync_linux_local.py --if-staged --quiet || exit 1
+fi
+exit 0

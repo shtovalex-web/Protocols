@@ -15,36 +15,12 @@ import shutil
 import sys
 from pathlib import Path
 
+from sync_util import COPY_DIRS, COPY_ROOT_FILES, rmtree_resilient
+
 LINUX_PORT = Path(__file__).resolve().parent
 PROJECT_ROOT = LINUX_PORT.parent
 APP_DIR = LINUX_PORT / "app"
 OVERLAYS = LINUX_PORT / "overlays"
-
-# Копируемые каталоги (относительно корня проекта).
-COPY_DIRS = (
-    "ProtocolOHT_next",
-    "bundle",
-)
-
-# Копируемые файлы в корне app/.
-COPY_ROOT_FILES = (
-    "main.py",
-    "app_paths.py",
-    "clipboard_ui.py",
-    "commission_admin.py",
-    "docx_template_protection.py",
-    "employees_io.py",
-    "excel_data_cache.py",
-    "faq_viewer.py",
-    "mintrud_export.py",
-    "mintrud_trained_registry.py",
-    "program_keys.py",
-    "programs_v_prof.py",
-    "russian_genitive.py",
-    "v_prof_combinations.py",
-    "v_program_registry_match.py",
-    "educated_person_import_v1.0.9.xsd",
-)
 
 # Текстовые замены в скопированных файлах (Linux-подсказки в UI).
 TEXT_REPLACEMENTS: tuple[tuple[str, str, str], ...] = (
@@ -145,7 +121,7 @@ def prepare() -> int:
         return 1
 
     if APP_DIR.exists():
-        shutil.rmtree(APP_DIR)
+        rmtree_resilient(APP_DIR)
     APP_DIR.mkdir(parents=True)
 
     for dirname in COPY_DIRS:

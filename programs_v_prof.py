@@ -170,8 +170,9 @@ def _detect_layout_from_header(header: tuple[Any, ...]) -> VProfLayout:
 
 def _read_header_row(path: Path) -> tuple[Any, ...]:
     from openpyxl import load_workbook
+    from bundle_integration import resolve_openpyxl_workbook_path
 
-    wb = load_workbook(path, read_only=True, data_only=True)
+    wb = load_workbook(resolve_openpyxl_workbook_path(path), read_only=True, data_only=True)
     try:
         names = {n.lower(): n for n in wb.sheetnames}
         sn = names.get(V_PROF_SHEET_NAME.lower())
@@ -375,11 +376,12 @@ def _load_v_prof_profession_rows(
     """Все строки V_PROF: (профессия из A, полная строка)."""
     _ = mtime_ns
     from openpyxl import load_workbook
+    from bundle_integration import resolve_openpyxl_workbook_path
 
     path = Path(path_str)
     layout = v_prof_layout_for_path(path)
     max_col = layout.last_col + 1
-    wb = load_workbook(path, read_only=True, data_only=True)
+    wb = load_workbook(resolve_openpyxl_workbook_path(path), read_only=True, data_only=True)
     try:
         names = {n.lower(): n for n in wb.sheetnames}
         sn = names.get(V_PROF_SHEET_NAME.lower())

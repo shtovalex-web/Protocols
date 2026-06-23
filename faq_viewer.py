@@ -11,6 +11,8 @@ from tkinter import messagebox, ttk
 from app_paths import application_bundle_dir
 from clipboard_ui import register_clipboard_window
 from protocol_embedded_assets import apply_embedded_window_icon_from_parent
+from ui_theme import Colors, SPACING, apply_theme_to_window, configure_readonly_text
+from ui_widgets import build_dialog_button_row, build_search_toolbar
 
 FAQ_CANDIDATE_NAMES = ("FAQ.txt", "FAQ.md")
 CHANGELOG_CANDIDATE_NAMES = ("ЖУРНАЛ_ДОРАБОТОК.md",)
@@ -62,38 +64,27 @@ def open_text_help_window(
         return
 
     win = tk.Toplevel(parent)
+    apply_theme_to_window(win)
     apply_embedded_window_icon_from_parent(win, parent)
     win.title(title)
     win.minsize(520, 400)
-    win.geometry("700x520")
+    win.geometry("720x540")
 
-    bar = ttk.Frame(win, padding=6)
-    bar.pack(fill=tk.X)
-    ttk.Label(bar, text="Поиск (от 2 симв.):").pack(side=tk.LEFT, padx=(0, 6))
-    var_q = tk.StringVar()
-    ent = ttk.Entry(bar, textvariable=var_q, width=36)
-    ent.pack(side=tk.LEFT, padx=(0, 6))
-    status = ttk.Label(bar, text="")
-    status.pack(side=tk.LEFT, padx=(8, 0))
+    outer = ttk.Frame(win, padding=SPACING)
+    outer.pack(fill=tk.BOTH, expand=True)
 
-    mid = ttk.Frame(win)
-    mid.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
+    mid = ttk.Frame(outer)
+    mid.pack(fill=tk.BOTH, expand=True, pady=(0, SPACING))
     sb = ttk.Scrollbar(mid)
     sb.pack(side=tk.RIGHT, fill=tk.Y)
-    txt = tk.Text(
-        mid,
-        wrap=tk.WORD,
-        yscrollcommand=sb.set,
-        font=("Segoe UI", 10),
-        padx=8,
-        pady=8,
-    )
+    txt = tk.Text(mid, wrap=tk.WORD, yscrollcommand=sb.set)
+    configure_readonly_text(txt)
     txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     sb.config(command=txt.yview)
 
     txt.insert("1.0", body_text)
     txt.configure(state=tk.DISABLED)
-    txt.tag_configure("hit", background="#fff3a0")
+    txt.tag_configure("hit", background=Colors.search_hit)
 
     def _all_enabled() -> None:
         txt.configure(state=tk.NORMAL)
@@ -153,15 +144,14 @@ def open_text_help_window(
         _all_disabled()
         status.configure(text="Следующее вхождение")
 
-    ttk.Button(bar, text="Подсветить все", command=highlight_all).pack(
-        side=tk.LEFT, padx=(0, 6)
+    _bar, var_q, status, ent = build_search_toolbar(
+        outer,
+        on_highlight=highlight_all,
+        on_next=find_next,
     )
-    ttk.Button(bar, text="Далее", command=find_next).pack(side=tk.LEFT)
     ent.bind("<Return>", lambda _e: find_next())
 
-    bf = ttk.Frame(win, padding=(6, 0, 6, 6))
-    bf.pack(fill=tk.X)
-    ttk.Button(bf, text="Закрыть", command=win.destroy).pack(side=tk.RIGHT)
+    build_dialog_button_row(outer, on_close=win.destroy)
 
     try:
         win.transient(parent)

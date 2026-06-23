@@ -25,6 +25,11 @@ from docx.text.paragraph import Paragraph as DocxParagraph
 from docx.text.run import Run as DocxRun
 
 from app_paths import application_bundle_dir
+from bundle_integration import (
+    bundle_protocol_template_path,
+    resolve_docx_template_path,
+    resolve_openpyxl_workbook_path,
+)
 from docx_template_protection import save_formed_protocol_docx
 from commission_admin import (
     COMMISSION_KIND_OT,
@@ -591,13 +596,13 @@ class ProtocolTemplateError(Exception):
 
 
 def protocol_template_path() -> Path:
-    """Шаблон протокола по охране труда: файл в папке с программой (корень проекта при запуске из исходников)."""
-    return application_bundle_dir() / PROTOCOL_TEMPLATE_FILENAME
+    """Шаблон протокола по охране труда: bundle/default_protocol.docx или .odt."""
+    return bundle_protocol_template_path(technical=False)
 
 
 def protocol_technical_template_path() -> Path:
-    """Шаблон протокола по техническим вопросам — там же, рядом с default_protocol.docx."""
-    return application_bundle_dir() / PROTOCOL_TEMPLATE_TECH_FILENAME
+    """Шаблон протокола по техническим вопросам — default_protocol_tehnicheskiy.docx/.odt."""
+    return bundle_protocol_template_path(technical=True)
 
 
 def resolve_protocol_template_path(
@@ -614,19 +619,20 @@ def resolve_protocol_template_path(
         if technical_user_override is not None:
             p = technical_user_override.expanduser().resolve()
             if p.is_file():
-                return p
+                return resolve_docx_template_path(p)
         tech = protocol_technical_template_path()
         if tech.is_file():
             return tech
         return protocol_template_path()
     if user_override is not None:
-        return user_override.expanduser().resolve()
+        return resolve_docx_template_path(user_override.expanduser().resolve())
     return protocol_template_path()
 
 def load_excel_first_nonempty_in_column(
     path: Path, sheet_name: str, column_one_based: int
 ) -> str:
     """Первая непустая ячейка в столбце листа, начиная со 2-й строки."""
+    path = resolve_openpyxl_workbook_path(path)
     try:
         from openpyxl import load_workbook
     except ImportError:
@@ -898,6 +904,7 @@ def _select_best_row_by_profession_col_a(
         return None
     if not path.is_file() or not profession.strip():
         return None
+    path = resolve_openpyxl_workbook_path(path)
     wb = load_workbook(path, read_only=True, data_only=True)
     try:
         names = {n.lower(): n for n in wb.sheetnames}
@@ -1824,7 +1831,7 @@ def _load_form_lines_from_txt(path: Path) -> list[str]:
 
 
 def load_protocol_form_lines(path: Path | None = None) -> list[str]:
-    p = protocol_template_path() if path is None else Path(path).expanduser().resolve()
+    p = protocol_template_path() if path is None else resolve_docx_template_path(Path(path))
     if not p.is_file():
         hint = (
             f"Положите файл «{PROTOCOL_TEMPLATE_FILENAME}» в папку с программой или выберите шаблон."

@@ -48,6 +48,7 @@ def smoke_imports() -> None:
     sys.path.insert(0, str(_NEXT))
     sys.path.insert(1, str(APP))
 
+    import bundle_integration  # noqa: F401
     import commission_admin  # noqa: F401
     import employees_io  # noqa: F401
     import protocol_db  # noqa: F401

@@ -225,6 +225,14 @@ def main() -> int:
         except OSError:
             pass
 
+    if str(ROOT / "tools") not in sys.path:
+        sys.path.insert(0, str(ROOT / "tools"))
+    from tidy_workspace import cleanup_etalon_root
+
+    stale = cleanup_etalon_root(apply=True, etalon=ETALON)
+    if stale:
+        print(f"Эталон: убрано лишних файлов в корне: {len(stale)}")
+
     print(f"Эталон: {ETALON}")
     print(f"Скопировано/записано: {len(copied)} элементов.")
     if missing_required:

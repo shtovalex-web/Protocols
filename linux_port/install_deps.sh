@@ -1,38 +1,31 @@
 #!/usr/bin/env bash
-# Установка зависимостей Linux-порта (системные пакеты + pip).
+# Установка зависимостей для сборки/запуска (системные пакеты + .venv-linux).
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$ROOT"
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "Нужен python3 (3.10+)." >&2
+KIT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$KIT_ROOT"
+# shellcheck source=lib/sh_common.sh
+source "$KIT_ROOT/lib/sh_common.sh"
+
+BUILD_PYTHON="$(resolve_build_python || true)"
+if ! "$BUILD_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+  echo "Нужен Python 3.10+ (для ALT: sudo apt install python3.11 python3.11-tools python3.11-devel libpython3.11)." >&2
+  exit 1
+fi
+echo "Python для сборки: $BUILD_PYTHON ($("$BUILD_PYTHON" --version 2>&1))"
+
+install_system_packages
+
+if [[ ! -f "$KIT_ROOT/app/main.py" ]]; then
+  echo "Нет app/main.py в комплекте." >&2
   exit 1
 fi
 
-if command -v apt-get >/dev/null 2>&1; then
-  echo "Системные пакеты (Debian/Ubuntu)..."
-  sudo apt-get update
-  sudo apt-get install -y \
-    python3-tk \
-    python3-venv \
-    python3-dev \
-    binutils \
-    libreoffice-writer \
-    fonts-dejavu-core \
-    fonts-liberation
-fi
-
-if [[ ! -d "$ROOT/.venv" ]]; then
-  python3 -m venv "$ROOT/.venv"
-fi
-# shellcheck disable=SC1091
-source "$ROOT/.venv/bin/activate"
+ensure_venv "$KIT_ROOT" "$BUILD_PYTHON"
 python -m pip install --upgrade pip
-python -m pip install -r "$ROOT/requirements.txt"
+python -m pip install -r "$KIT_ROOT/requirements-build.txt"
 
-if [[ ! -f "$ROOT/app/main.py" ]]; then
-  echo "Копия app/ не найдена — выполните: python3 prepare.py" >&2
-  exit 1
-fi
-
-echo "Готово. Запуск: ./run.sh"
+echo
+echo "Готово. Дальше:"
+echo "  ./check_env.sh"
+echo "  ./build.sh"
