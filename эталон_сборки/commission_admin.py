@@ -16,7 +16,14 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
 
-from ui_theme import UI, configure_listbox, configure_readonly_text, pad
+from ui_theme import (
+    FIELD_COMBO_STYLE,
+    FIELD_DATE_STYLE,
+    FIELD_STYLE,
+    configure_editable_text,
+    configure_listbox,
+    pad,
+)
 
 from app_paths import application_user_dir
 from clipboard_ui import bind_editable_clipboard, register_clipboard_window
@@ -153,6 +160,7 @@ def ensure_app_settings_table(conn: sqlite3.Connection) -> None:
 
 def _app_setting_get(key: str, default: str = "") -> str:
     with sqlite3.connect(database_path()) as conn:
+        ensure_app_settings_table(conn)
         row = conn.execute(
             "SELECT value FROM app_settings WHERE key = ?",
             (key,),
@@ -584,9 +592,9 @@ def commission_members_two_column_rows(mem_parts: list[str]) -> list[tuple[str, 
     right = mem_parts[mid:]
     rows: list[tuple[str, str]] = []
     for i in range(max(len(left), len(right))):
-        l = left[i] if i < len(left) else ""
+        left_txt = left[i] if i < len(left) else ""
         r = right[i] if i < len(right) else ""
-        rows.append((l, r))
+        rows.append((left_txt, r))
     return rows
 
 
@@ -853,6 +861,7 @@ class CommissionAdminPanel(ttk.Labelframe):
             prof_fr,
             textvariable=self.var_commission_profile,
             width=46,
+            style=FIELD_COMBO_STYLE,
         )
         self.cmb_commission_profile.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6))
         self.cmb_commission_profile.bind("<<ComboboxSelected>>", self._on_profile_selected)
@@ -875,25 +884,26 @@ class CommissionAdminPanel(ttk.Labelframe):
         ).grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=g["padx"], pady=(0, g["pady"]))
 
         ttk.Label(self, text="№ приказа о комиссии:").grid(row=R + 0, column=0, sticky=tk.W, **g)
-        self.entry_commission_order_no = ttk.Entry(self, width=50)
+        self.entry_commission_order_no = ttk.Entry(self, width=50, style=FIELD_STYLE)
         self.entry_commission_order_no.grid(row=R + 0, column=1, sticky=tk.EW, **g)
 
         ttk.Label(self, text="Дата приказа (ДД.ММ.ГГГГ):").grid(row=R + 1, column=0, sticky=tk.W, **g)
-        self.entry_commission_order_date = ttk.Entry(self, width=50)
+        self.entry_commission_order_date = ttk.Entry(self, width=50, style=FIELD_DATE_STYLE)
         self.entry_commission_order_date.grid(row=R + 1, column=1, sticky=tk.EW, **g)
 
         ttk.Label(
             self,
             text="Подразделение (место проверки знаний):",
         ).grid(row=R + 2, column=0, sticky=tk.NW, **g)
-        self.txt_commission_venue = tk.Text(self, height=3, width=52, wrap=tk.WORD, font=UI.font_body)
+        self.txt_commission_venue = tk.Text(self, height=3, width=52, wrap=tk.WORD)
+        configure_editable_text(self.txt_commission_venue)
         self.txt_commission_venue.grid(row=R + 2, column=1, sticky=tk.EW, **g)
 
         ttk.Label(
             self,
             text='В соответствии с приказом (кем утверждён, без этих слов):',
         ).grid(row=R + 3, column=0, sticky=tk.W, **g)
-        self.entry_commission_order_approver = ttk.Entry(self, width=50)
+        self.entry_commission_order_approver = ttk.Entry(self, width=50, style=FIELD_STYLE)
         self.entry_commission_order_approver.grid(row=R + 3, column=1, sticky=tk.EW, **g)
 
         ttk.Label(

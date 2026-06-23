@@ -115,6 +115,12 @@ def _copy_port_meta() -> None:
     )
 
 
+def _purge_pycache(root: Path) -> None:
+    for cache in root.rglob("__pycache__"):
+        if cache.is_dir():
+            rmtree_resilient(cache)
+
+
 def prepare() -> int:
     if not (PROJECT_ROOT / "main.py").is_file():
         print(f"Ошибка: не найден основной проект в {PROJECT_ROOT}", file=sys.stderr)
@@ -137,6 +143,7 @@ def prepare() -> int:
     overlays = _apply_overlays()
     patches = _apply_text_replacements()
     _copy_port_meta()
+    _purge_pycache(APP_DIR)
 
     print(f"Linux-копия подготовлена: {APP_DIR}")
     print(f"  Оверлеев: {overlays}")

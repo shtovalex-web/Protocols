@@ -561,6 +561,36 @@ def apply_theme_to_window(win: tk.Misc) -> ttk.Style:
     return style
 
 
+def window_appears_maximized_or_fullscreen(
+    win: tk.Misc,
+    *,
+    margin_w: int = 64,
+    margin_h: int = 96,
+) -> bool:
+    """Окно развёрнуто WM или занимает почти весь экран (не трогать geometry)."""
+    try:
+        if str(win.wm_state()).lower() == "zoomed":
+            return True
+    except tk.TclError:
+        pass
+    try:
+        if bool(win.attributes("-zoomed")):
+            return True
+    except tk.TclError:
+        pass
+    try:
+        win.update_idletasks()
+        sw = int(win.winfo_screenwidth())
+        sh = int(win.winfo_screenheight())
+        ww = int(win.winfo_width())
+        wh = int(win.winfo_height())
+    except tk.TclError:
+        return False
+    if ww < 200 or wh < 200:
+        return False
+    return ww >= sw - margin_w and wh >= sh - margin_h
+
+
 def apply_startup_geometry(
     win: tk.Misc,
     *,

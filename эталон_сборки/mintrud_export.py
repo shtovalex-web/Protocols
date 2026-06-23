@@ -67,6 +67,7 @@ def _registry_id_from_v(
 # Актуальное имя шаблона и запасные варианты.
 MINTRUD_TEMPLATE_FILENAMES: tuple[str, ...] = (
     "Шаблон_Минтруд_XSD_УМН.xlsx",
+    "Шаблон_Минтруд_XSD_УМН.ods",
     "!! Шаблон_Минтруд_XSD_УМН _ общ+.xlsx",
     "Шаблон_Минтруд_XSD_УМН _ общ+.xlsx",
 )
@@ -152,6 +153,14 @@ FIELD_BY_HEADER_NORM: dict[str, str] = {
 
 
 def mintrud_template_path() -> Path | None:
+    try:
+        from bundle_integration import bundle_mintrud_template_path
+
+        resolved = bundle_mintrud_template_path()
+        if resolved is not None:
+            return resolved
+    except Exception:
+        pass
     base = application_bundle_dir()
     for name in MINTRUD_TEMPLATE_FILENAMES:
         p = base / name

@@ -8,7 +8,7 @@ from typing import Any, Callable
 import tkinter as tk
 from tkinter import ttk
 
-from ui_theme import Colors, SPACING, SPACING_SM, UI, pad
+from ui_theme import Colors, FIELD_STYLE, SPACING, SPACING_SM, UI, pad
 
 
 class WidgetTooltip:
@@ -142,7 +142,7 @@ def build_search_toolbar(
     bar.pack(fill=tk.X)
     ttk.Label(bar, text="Поиск (от 2 симв.):").pack(side=tk.LEFT, padx=(0, SPACING_SM))
     var_q = tk.StringVar()
-    ent = ttk.Entry(bar, textvariable=var_q, width=32)
+    ent = ttk.Entry(bar, textvariable=var_q, width=32, style=FIELD_STYLE)
     ent.pack(side=tk.LEFT, padx=(0, SPACING_SM))
     ttk.Button(bar, text="Подсветить", command=on_highlight, style="Small.TButton").pack(
         side=tk.LEFT, padx=(0, SPACING_SM)

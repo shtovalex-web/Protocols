@@ -90,6 +90,7 @@ BUNDLE_FILES = [
     "default_protocol_tehnicheskiy.docx",
     "ПОДРОБНАЯ_ИНСТРУКЦИЯ_для_пользователя.docx",
     "ИНСТРУКЦИЯ_оформление_протоколов_Минтруд.docx",
+    "ЖУРНАЛ_ДОРАБОТОК.md",
     _EMPLOYEES_XLSX,
     _PROGRAMS_XLSX,
     "icon.ico",
@@ -132,7 +133,8 @@ def _pick_output_dir_interactive() -> Path | None:
 DIST_README = """Папка готовой сборки (onefile + комплект в data/)
 
 • ProtocolOOT.exe — программа (один файл).
-• Подпапка data/ — шаблоны Word, образцы Excel, XSD Минтруда, справка FAQ.txt, инструкции (.docx).
+• Подпапка data/ — шаблоны Word, образцы Excel, XSD Минтруда, справка FAQ.txt,
+  инструкции (.docx), журнал доработок (ЖУРНАЛ_ДОРАБОТОК.md).
   В корне с exe эти файлы не лежат — так проще не путать их с рабочими базами.
 
 При сборке Data_base.xlsx и Programs_base.xlsx (если есть в исходниках) кладутся в data/ и

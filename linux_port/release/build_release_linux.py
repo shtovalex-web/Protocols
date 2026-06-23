@@ -85,10 +85,10 @@ def _run_verify() -> int:
 
 
 def _run_ruff() -> int:
-    rc = subprocess.run(
-        [sys.executable, "-m", "ruff", "check", str(APP)],
-        cwd=str(LINUX_PORT),
-    ).returncode
+    sys.path.insert(0, str(LINUX_PORT))
+    from ruff_linux import run_ruff_on_app
+
+    rc = run_ruff_on_app(linux_port=LINUX_PORT, app_dir=APP, cwd=LINUX_PORT)
     if rc != 0:
         print("Сборка остановлена: исправьте замечания ruff.", file=sys.stderr)
     return rc
