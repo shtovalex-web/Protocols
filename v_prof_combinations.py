@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from tkinter import messagebox, ttk
 
 from employees_io import EmployeeRecord
+from ui_theme import SPACING, SPACING_LG, apply_theme_to_window, configure_canvas, pad
 from v_program_registry_match import norm_profession_key
 
 
@@ -97,6 +98,7 @@ class VProfCombinationsDialog(tk.Toplevel):
         initial_enabled_by_fio: dict[str, frozenset[str]] | None = None,
     ) -> None:
         super().__init__(master)
+        apply_theme_to_window(self)
         self.title("Совмещения — программы «В»")
         self.transient(master)
         self.grab_set()
@@ -108,7 +110,7 @@ class VProfCombinationsDialog(tk.Toplevel):
         init_main = initial_main_by_fio or {}
         init_enabled = initial_enabled_by_fio or {}
 
-        outer = ttk.Frame(self, padding=10)
+        outer = ttk.Frame(self, padding=SPACING_LG)
         outer.pack(fill=tk.BOTH, expand=True)
         ttk.Label(
             outer,
@@ -117,11 +119,13 @@ class VProfCombinationsDialog(tk.Toplevel):
                 "и выберите основную — она будет в графе «Должность» протокола для этого человека."
             ),
             wraplength=480,
-        ).pack(anchor=tk.W, pady=(0, 8))
+            style="Hint.TLabel",
+        ).pack(anchor=tk.W, pady=(0, SPACING))
 
         body = ttk.Frame(outer)
         body.pack(fill=tk.BOTH, expand=True)
         canvas = tk.Canvas(body, highlightthickness=0)
+        configure_canvas(canvas)
         sb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=canvas.yview)
         inner = ttk.Frame(canvas)
         inner.bind(
@@ -134,8 +138,8 @@ class VProfCombinationsDialog(tk.Toplevel):
         sb.pack(side=tk.RIGHT, fill=tk.Y)
 
         for fio_key, fio, profs in groups:
-            lf = ttk.Labelframe(inner, text=fio, padding=6)
-            lf.pack(fill=tk.X, pady=(0, 8))
+            lf = ttk.Labelframe(inner, text=fio, padding=pad(), style="Card.TLabelframe")
+            lf.pack(fill=tk.X, pady=(0, SPACING))
             enabled_set = init_enabled.get(fio_key)
             main_init = (init_main.get(fio_key) or "").strip()
             if not main_init and profs:
@@ -160,10 +164,12 @@ class VProfCombinationsDialog(tk.Toplevel):
                 ).pack(side=tk.LEFT, padx=(12, 0))
 
         btns = ttk.Frame(outer)
-        btns.pack(fill=tk.X, pady=(12, 0))
-        ttk.Button(btns, text="OK", command=self._on_ok, width=10).pack(side=tk.RIGHT)
+        btns.pack(fill=tk.X, pady=(SPACING_LG, 0))
+        ttk.Button(btns, text="OK", command=self._on_ok, width=10, style="Accent.TButton").pack(
+            side=tk.RIGHT
+        )
         ttk.Button(btns, text="Отмена", command=self._on_cancel, width=10).pack(
-            side=tk.RIGHT, padx=(0, 8)
+            side=tk.RIGHT, padx=(0, SPACING)
         )
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
         self.bind("<Escape>", lambda _e: self._on_cancel())

@@ -7,3 +7,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: sync-linux-local
+        name: sync linux_port/app (if app sources staged)
+        entry: python tools/sync_linux_local.py --if-staged --quiet
+        language: system
+        pass_filenames: false
+        always_run: true

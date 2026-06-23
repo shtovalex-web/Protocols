@@ -6,7 +6,7 @@
 
 1. Откройте репозиторий на GitHub → **Actions** → workflow **build-linux-dist**.
 2. Выберите последний успешный запуск (ветка **`linux`**, push или **Run workflow**).
-3. Внизу страницы — артефакт **`ProtocolOHT_linux_dist`** (zip).
+3. Внизу страницы — артефакт **`ProtocolOOT_linux`** (zip).
 4. Распакуйте на Linux-ПК, например в `/opt/ProtocolOOT/`.
 
 Структура после распаковки:
@@ -28,25 +28,49 @@ chmod +x ProtocolOOT
 
 ## Вариант 2: собрать самому на Linux
 
-Нужна ветка **`linux`** (в ней уже есть `linux_port/app/`):
+### 2a. Автономный комплект (без git, ~десятки МБ)
+
+На Windows:
+
+```bash
+python linux_port/prepare.py
+python tools/pack_linux_build.py
+```
+
+Скопируйте папку **`ProtocolOOT_linux_build/`** на Linux (zip/USB/сеть).
+
+На Linux:
+
+```bash
+cd ProtocolOOT_linux_build
+chmod +x *.sh
+./check_env.sh
+./install_deps.sh    # при FAIL по tkinter/libpython
+./build.sh
+```
+
+Если комплект на `/mnt/c/...` в WSL: `./sync_workspace.sh`, затем сборка в `~/ProtocolOOT_linux_build`.
+
+### 2b. Из git (ветка linux)
 
 ```bash
 git clone -b linux https://github.com/shtovalex-web/Protocols.git
 cd Protocols/linux_port
-chmod +x build_linux.sh install_deps.sh
+chmod +x *.sh
+./check_env.sh
 ./install_deps.sh
-./build_linux.sh
+./build.sh
 ```
 
 `install_deps.sh` ставит системные пакеты (`python3-tk`, `binutils`, `python3-dev`, LibreOffice, шрифты) и pip-зависимости; `build_linux.sh` — проверки как в [grafik-pz](https://github.com/shtovalex-web/grafik-pz) и запуск PyInstaller.
 
-Результат: `linux_port/ProtocolOHT_linux_dist/`.
+Результат: `linux_port/release/out_linux/`.
 
 Архив для переноса:
 
 ```bash
-cd linux_port/ProtocolOHT_linux_dist
-zip -r ../ProtocolOHT_linux_dist.zip .
+cd linux_port/release/out_linux
+zip -r ../out_linux.zip .
 ```
 
 ## Требования для сборки (Linux)
@@ -56,9 +80,21 @@ zip -r ../ProtocolOHT_linux_dist.zip .
 | `python3-tk` | tkinter (проверка перед сборкой) |
 | `binutils` | `objdump` для PyInstaller |
 | `python3-dev` | `libpython3*.so` |
-| `requirements-build.txt` | PyInstaller, ruff |
+| `requirements-build.txt` | PyInstaller, ruff и зависимости приложения (`-r requirements.txt`) |
 
 Debian/Ubuntu: `sudo apt install python3-tk python3-venv python3-dev binutils`
+
+### Если сборка не стартует
+
+| Сообщение | Что сделать |
+|-----------|-------------|
+| `Не найден …/release/build_release_linux.py` | `git pull` на ветке **linux** (папка `linux_port/release/` должна быть в репозитории) |
+| `Нет linux_port/app/main.py` | `python3 linux_port/prepare.py` или клон `-b linux` |
+| `No module named openpyxl` / `docx` | `./install_deps.sh` или `pip install -r linux_port/requirements-build.txt` |
+| `/usr/bin/env: bash\r` | `python3 fix_crlf.py && chmod +x *.sh` или `sed -i 's/\r$//' *.sh` |
+| Ошибки venv/PyInstaller на VirtualBox | Клонируйте проект в `~/Protocols` внутри VM, не на общей папке Windows |
+
+Сборка без проверок (если ruff мешает): `./build_linux.sh --no-verify`
 
 На ALT Linux и в VM: собирайте в локальной копии (`~/Protocols`), не на смонтированной папке VirtualBox — иначе ломаются симлинки venv/PyInstaller (см. опыт [grafik-pz](https://github.com/shtovalex-web/grafik-pz/blob/main/docs/linux.md)).
 

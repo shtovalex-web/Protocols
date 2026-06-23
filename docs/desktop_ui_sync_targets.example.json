@@ -1,0 +1,8 @@
+{
+  "targets": [
+    {
+      "path": "D:/Проекты Курсор/МойПроект/src/myapp/desktop_ui",
+      "note": "Скопируйте в desktop_ui_sync_targets.json и укажите реальные пути"
+    }
+  ]
+}

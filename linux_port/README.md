@@ -13,6 +13,16 @@
 
 **Синхронизация после правок на main:**
 
+Локально (автоматически при `python tools/verify_project.py` или вручную):
+
+```bash
+python tools/sync_linux_local.py
+```
+
+Обновляет `linux_port/app/` и `ProtocolOOT_linux_build/`. Перед `git commit` — хук `pre-commit` (см. `setup_git_hooks.bat`).
+
+В git (ветка `linux`):
+
 ```bash
 python tools/sync_linux_branch.py
 python tools/sync_linux_branch.py --push
@@ -42,16 +52,43 @@ chmod +x *.sh
 
 ## Бинарник (дистрибутив без исходников)
 
+### Вариант A: автономный комплект (без всего git)
+
+На Windows перед переносом на Linux:
+
 ```bash
-./install_deps.sh
-./build_linux.sh
+python linux_port/prepare.py
+python tools/pack_linux_build.py
 ```
 
-`install_deps.sh` ставит `python3-tk`, `binutils`, `python3-dev` и pip-зависимости (как в [grafik-pz](https://github.com/shtovalex-web/grafik-pz)).
+Папка **`ProtocolOOT_linux_build/`** (~десятки МБ) — скопируйте на Linux, не весь репозиторий.
 
-Результат: **`ProtocolOHT_linux_dist/`** — `ProtocolOOT` + `data/`.
+На Linux:
 
-Готовый **zip** с GitHub: Actions → **build-linux-dist** → артефакт `ProtocolOHT_linux_dist.zip`.  
+```bash
+cd ProtocolOOT_linux_build
+python3 fix_crlf.py     # если «bash\r» после копирования с Windows
+chmod +x *.sh
+./check_env.sh
+./install_deps.sh       # при необходимости
+./build.sh
+```
+
+Если комплект на `/mnt/c/...` (WSL): `./sync_workspace.sh` → `~/ProtocolOOT_linux_build`.
+
+Подробно: `linux_port/release/README_BUILD_LINUX.txt`.
+
+### Вариант B: из git (ветка linux)
+
+```bash
+./install_deps.sh
+./check_env.sh
+./build.sh
+```
+
+Результат: **`linux_port/release/out_linux/`** — `ProtocolOOT`, `data/`, инструкция (как [grafik-pz](https://github.com/shtovalex-web/grafik-pz) `release/out_linux/`).
+
+Готовый **zip** с GitHub: Actions → **build-linux-dist** → артефакт `ProtocolOOT_linux`.  
 Подробно: `docs/LINUX_DIST.md`.
 
 ## Функциональность

@@ -44,10 +44,23 @@ _pyinstaller_build_onefile/
 ProtocolOHT_app/
 ProtocolOHT_onefile/
 ProtocolOOT.spec
+ProtocolOOT_linux_build_test_tmp/
+
+# Дубликаты комплекта в корне (канон — bundle/)
+/default_protocol.docx
+/default_protocol_tehnicheskiy.docx
+/educated_person_import_v1.0.9.xsd
+/icon.ico
 
 # Linux-порт (сгенерированная копия и сборка; на ветке `linux` каталог app/ коммитится принудительно)
 linux_port/app/
 linux_port/.venv/
+linux_port/.venv/
+linux_port/.venv-linux/
+ProtocolOOT_linux_build/
+linux_port/release/out_linux/
+linux_port/release/out_linux.zip
+linux_port/release/_build/
 linux_port/ProtocolOHT_linux_dist/
 linux_port/_pyinstaller_build_linux/
 linux_port/ProtocolOOT.spec

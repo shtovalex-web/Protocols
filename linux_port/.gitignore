@@ -1,7 +1,12 @@
 app/
 .venv/
+.venv-linux/
 __pycache__/
 *.py[cod]
+dist/
+release/out_linux/
+release/out_linux.zip
+release/_build/
 ProtocolOHT_linux_dist/
 ProtocolOHT_linux_dist.zip
 _pyinstaller_build_linux/

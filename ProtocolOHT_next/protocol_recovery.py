@@ -24,11 +24,16 @@ from protocol_paths import DATABASE_FILENAME, LAST_PROTOCOL_NO_STATE_FILENAME
 
 RECOVERY_TEMPLATE_COPY_FILENAMES: tuple[str, ...] = (
     PROTOCOL_TEMPLATE_FILENAME,
+    "default_protocol.odt",
     "default_protocol_tehnicheskiy.docx",
+    "default_protocol_tehnicheskiy.odt",
     "FAQ.txt",
     "FAQ.md",
     "icon.ico",
+    "Data_base.ods",
+    "Programs_base.ods",
     "Шаблон_Минтруд_XSD_УМН.xlsx",
+    "Шаблон_Минтруд_XSD_УМН.ods",
     "!! Шаблон_Минтруд_XSD_УМН _ общ+.xlsx",
     "Шаблон_Минтруд_XSD_УМН _ общ+.xlsx",
     "ПОДРОБНАЯ_ИНСТРУКЦИЯ_для_пользователя.docx",

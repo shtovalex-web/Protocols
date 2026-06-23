@@ -33,10 +33,15 @@
 
 ```bash
 python tools/tidy_workspace.py          # что будет удалено
-python tools/tidy_workspace.py --apply  # кэши, сборки, linux_port/app
+python tools/tidy_workspace.py --apply  # кэши, сборки, linux_port/app, дубликаты bundle/ в корне
+python tools/tidy_workspace.py --etalon-only --apply  # мусор в корне эталон_сборки/
 ```
 
 Или `tidy_workspace.bat` в корне.
+
+Удаляются: `__pycache__`, `.ruff_cache`, `ProtocolOOT_linux_build/`, `ProtocolOOT_linux_build_test_tmp/`, сгенерированный `linux_port/app/`, дубликаты шаблонов в корне (если есть в `bundle/`), случайные `protocols.db` и копии шаблонов в корне `эталон_сборки/` (комплект — в `data/`).
+
+**Не удаляются:** `protocols.db`, Excel и папки `Protokol/`, `Mintrud/` в корне проекта.
 
 ## Проверка
 

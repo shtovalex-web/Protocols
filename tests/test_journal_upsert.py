@@ -7,7 +7,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from _bootstrap import setup_main_project_paths
+from _bootstrap import (
+    close_tracked_sqlite_connections,
+    enable_sqlite_test_tracking,
+    setup_main_project_paths,
+)
 
 setup_main_project_paths()
 
@@ -25,6 +29,7 @@ from protocol_journal import (
 
 class TestJournalUpsert(unittest.TestCase):
     def setUp(self) -> None:
+        enable_sqlite_test_tracking()
         self._tmp = tempfile.TemporaryDirectory()
         self.db_path = Path(self._tmp.name) / "protocols.db"
         init_protocols_db_file(self.db_path)
@@ -35,12 +40,10 @@ class TestJournalUpsert(unittest.TestCase):
         pj.database_path = lambda: self.db_path  # type: ignore[assignment]
 
     def tearDown(self) -> None:
-        import gc
-
         import protocol_journal as pj
 
         pj.database_path = self._orig  # type: ignore[assignment]
-        gc.collect()
+        close_tracked_sqlite_connections()
         self._tmp.cleanup()
 
     def test_save_protocol_overwrites_same_number_date_kind(self) -> None:

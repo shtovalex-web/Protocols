@@ -14,6 +14,7 @@ from app_paths import (
     application_exe_dir,
     application_user_dir,
 )
+from bundle_integration import bundle_spreadsheet_path, resolve_openpyxl_workbook_path
 from employees_io import EMPLOYEES_EXCEL_FILENAME, PROGRAMS_EXCEL_FILENAME
 
 DATABASE_FILENAME = "protocols.db"
@@ -29,27 +30,33 @@ def database_path() -> Path:
 
 
 def employees_excel_default_path() -> Path:
-    """Рабочий Excel в каталоге данных; при отсутствии — образец из каталога с exe (шаблоны)."""
+    """Рабочий Excel в каталоге данных; при отсутствии — образец из bundle (.xlsx или .ods)."""
     u = application_user_dir() / EMPLOYEES_EXCEL_FILENAME
     if u.is_file():
-        return u
-    b = application_bundle_dir() / EMPLOYEES_EXCEL_FILENAME
-    if b.is_file():
+        return resolve_openpyxl_workbook_path(u)
+    b = bundle_spreadsheet_path("Data_base")
+    if b is not None:
         return b
-    return u
+    legacy = application_bundle_dir() / EMPLOYEES_EXCEL_FILENAME
+    if legacy.is_file():
+        return resolve_openpyxl_workbook_path(legacy)
+    return resolve_openpyxl_workbook_path(u)
 
 
 def programs_excel_default_path() -> Path:
     """
-    Справочник программ (B, V_PROF, PP, SIZ, V). Если Programs_base.xlsx нет рядом с программой —
-    используется тот же файл, что и для сотрудников (объединённый Data_base.xlsx).
+    Справочник программ (B, V_PROF, PP, SIZ, V). Если Programs_base нет рядом с программой —
+    используется тот же файл, что и для сотрудников (объединённый Data_base).
     """
     u = application_user_dir() / PROGRAMS_EXCEL_FILENAME
     if u.is_file():
-        return u
-    b = application_bundle_dir() / PROGRAMS_EXCEL_FILENAME
-    if b.is_file():
+        return resolve_openpyxl_workbook_path(u)
+    b = bundle_spreadsheet_path("Programs_base")
+    if b is not None:
         return b
+    legacy = application_bundle_dir() / PROGRAMS_EXCEL_FILENAME
+    if legacy.is_file():
+        return resolve_openpyxl_workbook_path(legacy)
     return employees_excel_default_path()
 
 

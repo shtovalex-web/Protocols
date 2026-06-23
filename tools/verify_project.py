@@ -4,6 +4,7 @@
 
   python tools/verify_project.py              — ruff + импорты + запуск main.py (новое окно)
   python tools/verify_project.py --no-launch — только ruff и импорты (CI, быстрая проверка)
+  python tools/verify_project.py --no-linux-sync — без обновления linux_port/app
 
 Устаревший алиас: --gui (то же, что поведение по умолчанию).
 
@@ -18,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 _NEXT = ROOT / "ProtocolOHT_next"
+_LINUX_PORT = ROOT / "linux_port"
 
 
 def run_ruff() -> None:
@@ -77,13 +79,45 @@ def run_unit_tests() -> None:
     print("unittest (tests/): OK")
 
 
+def sync_linux_after_verify(*, pack: bool = True) -> None:
+    """Обновить linux_port/app/ и комплект ProtocolOOT_linux_build/ при изменённых источниках."""
+    sync_dir = ROOT / "tools"
+    if str(sync_dir) not in sys.path:
+        sys.path.insert(0, str(sync_dir))
+    if str(_LINUX_PORT) not in sys.path:
+        sys.path.insert(0, str(_LINUX_PORT))
+
+    from sync_linux_local import (  # noqa: PLC0415
+        _git_unstaged_and_staged_paths,
+        needs_linux_sync,
+        sync_linux_local,
+    )
+
+    paths = _git_unstaged_and_staged_paths()
+    if not needs_linux_sync(paths):
+        print("Linux sync: пропуск (источники приложения не менялись)")
+        return
+    if sync_linux_local(pack=pack, quiet=False) != 0:
+        raise SystemExit(1)
+
+
 def main() -> int:
     argv = list(sys.argv[1:])
     no_launch = False
+    no_linux_sync = False
+    linux_prepare_only = False
     for flag in ("--no-launch", "-n"):
         while flag in argv:
             argv.remove(flag)
             no_launch = True
+    for flag in ("--no-linux-sync",):
+        while flag in argv:
+            argv.remove(flag)
+            no_linux_sync = True
+    for flag in ("--linux-prepare-only",):
+        while flag in argv:
+            argv.remove(flag)
+            linux_prepare_only = True
     for legacy in ("--gui",):
         while legacy in argv:
             argv.remove(legacy)
@@ -94,6 +128,8 @@ def main() -> int:
     run_ruff()
     smoke_imports()
     run_unit_tests()
+    if not no_linux_sync:
+        sync_linux_after_verify(pack=not linux_prepare_only)
     if not no_launch:
         launch_app()
     return 0

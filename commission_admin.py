@@ -16,6 +16,17 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
 
+from ui_theme import (
+    FIELD_COMBO_STYLE,
+    FIELD_DATE_STYLE,
+    FIELD_STYLE,
+    UI,
+    configure_editable_text,
+    configure_listbox,
+    configure_readonly_text,
+    pad,
+)
+
 from app_paths import application_user_dir
 from clipboard_ui import bind_editable_clipboard, register_clipboard_window
 from employees_io import (
@@ -151,6 +162,7 @@ def ensure_app_settings_table(conn: sqlite3.Connection) -> None:
 
 def _app_setting_get(key: str, default: str = "") -> str:
     with sqlite3.connect(database_path()) as conn:
+        ensure_app_settings_table(conn)
         row = conn.execute(
             "SELECT value FROM app_settings WHERE key = ?",
             (key,),
@@ -829,13 +841,13 @@ class CommissionAdminPanel(ttk.Labelframe):
             if commission_kind == COMMISSION_KIND_TECH
             else "Приказ и комиссия по проверке знаний работников"
         )
-        super().__init__(master, text=lf_title, padding=6)
+        super().__init__(master, text=lf_title, padding=8, style="Card.TLabelframe")
         self._state = state
         self._get_excel_path = get_excel_path
         self._dialog_parent = dialog_parent
         self._commission_kind = commission_kind
         self._mirror_pool_state = mirror_pool_state
-        g = {"padx": 5, "pady": 5}
+        g = pad()
         self.columnconfigure(1, weight=1)
         R = 3
 
@@ -851,6 +863,7 @@ class CommissionAdminPanel(ttk.Labelframe):
             prof_fr,
             textvariable=self.var_commission_profile,
             width=46,
+            style=FIELD_COMBO_STYLE,
         )
         self.cmb_commission_profile.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6))
         self.cmb_commission_profile.bind("<<ComboboxSelected>>", self._on_profile_selected)
@@ -869,29 +882,30 @@ class CommissionAdminPanel(ttk.Labelframe):
                 "и подставляет его в протокол."
             ),
             wraplength=480,
-            font=("Segoe UI", 8),
+            style="Hint.TLabel",
         ).grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=g["padx"], pady=(0, g["pady"]))
 
         ttk.Label(self, text="№ приказа о комиссии:").grid(row=R + 0, column=0, sticky=tk.W, **g)
-        self.entry_commission_order_no = ttk.Entry(self, width=50)
+        self.entry_commission_order_no = ttk.Entry(self, width=50, style=FIELD_STYLE)
         self.entry_commission_order_no.grid(row=R + 0, column=1, sticky=tk.EW, **g)
 
         ttk.Label(self, text="Дата приказа (ДД.ММ.ГГГГ):").grid(row=R + 1, column=0, sticky=tk.W, **g)
-        self.entry_commission_order_date = ttk.Entry(self, width=50)
+        self.entry_commission_order_date = ttk.Entry(self, width=50, style=FIELD_DATE_STYLE)
         self.entry_commission_order_date.grid(row=R + 1, column=1, sticky=tk.EW, **g)
 
         ttk.Label(
             self,
             text="Подразделение (место проверки знаний):",
         ).grid(row=R + 2, column=0, sticky=tk.NW, **g)
-        self.txt_commission_venue = tk.Text(self, height=3, width=52, font=("Segoe UI", 10), wrap=tk.WORD)
+        self.txt_commission_venue = tk.Text(self, height=3, width=52, wrap=tk.WORD)
+        configure_editable_text(self.txt_commission_venue)
         self.txt_commission_venue.grid(row=R + 2, column=1, sticky=tk.EW, **g)
 
         ttk.Label(
             self,
             text='В соответствии с приказом (кем утверждён, без этих слов):',
         ).grid(row=R + 3, column=0, sticky=tk.W, **g)
-        self.entry_commission_order_approver = ttk.Entry(self, width=50)
+        self.entry_commission_order_approver = ttk.Entry(self, width=50, style=FIELD_STYLE)
         self.entry_commission_order_approver.grid(row=R + 3, column=1, sticky=tk.EW, **g)
 
         ttk.Label(
@@ -902,7 +916,7 @@ class CommissionAdminPanel(ttk.Labelframe):
                 "(не удаляйте их в .docx). Отдельно для вкладок «Охрана труда» и «Технич. вопросы»."
             ),
             wraplength=480,
-            font=("Segoe UI", 8),
+            style="Hint.TLabel",
         ).grid(row=R + 4, column=0, columnspan=2, sticky=tk.W, padx=g["padx"], pady=(2, g["pady"]))
 
         ttk.Label(
@@ -924,9 +938,9 @@ class CommissionAdminPanel(ttk.Labelframe):
             pool_fr,
             height=5,
             exportselection=False,
-            font=("Segoe UI", 10),
             yscrollcommand=sb_pool.set,
         )
+        configure_listbox(self.list_commission_pool)
         self.list_commission_pool.grid(row=0, column=0, sticky=tk.NSEW)
         sb_pool.configure(command=self.list_commission_pool.yview)
 
@@ -965,9 +979,9 @@ class CommissionAdminPanel(ttk.Labelframe):
             mem_fr,
             height=4,
             exportselection=False,
-            font=("Segoe UI", 10),
             yscrollcommand=sb_mem.set,
         )
+        configure_listbox(self.list_commission_members)
         self.list_commission_members.grid(row=0, column=0, sticky=tk.NSEW)
         sb_mem.configure(command=self.list_commission_members.yview)
         mem_btns = ttk.Frame(self)

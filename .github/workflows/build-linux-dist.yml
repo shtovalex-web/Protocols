@@ -21,8 +21,7 @@ jobs:
       - name: System packages
         run: |
           sudo apt-get update
-          # python3-tk — для verify при сборке; binutils (objdump) — для PyInstaller
-          sudo apt-get install -y python3-tk binutils
+          sudo apt-get install -y python3-tk python3-dev binutils
 
       - name: Install build dependencies
         run: |
@@ -41,15 +40,15 @@ jobs:
 
       - name: Pack distributable zip
         run: |
-          DIST="linux_port/ProtocolOHT_linux_dist"
+          DIST="linux_port/release/out_linux"
           test -f "$DIST/ProtocolOOT"
-          (cd "$DIST" && zip -r ../ProtocolOHT_linux_dist.zip .)
-          ls -la linux_port/ProtocolOHT_linux_dist.zip
+          (cd "$DIST" && zip -r ../out_linux.zip .)
+          ls -la linux_port/release/out_linux.zip
 
       - name: Upload distributable
         uses: actions/upload-artifact@v4
         with:
-          name: ProtocolOHT_linux_dist
-          path: linux_port/ProtocolOHT_linux_dist.zip
+          name: ProtocolOOT_linux
+          path: linux_port/release/out_linux.zip
           if-no-files-found: error
           retention-days: 90
