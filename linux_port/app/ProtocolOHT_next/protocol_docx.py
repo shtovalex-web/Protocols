@@ -24,7 +24,6 @@ from docx.text.hyperlink import Hyperlink
 from docx.text.paragraph import Paragraph as DocxParagraph
 from docx.text.run import Run as DocxRun
 
-from app_paths import application_bundle_dir
 from bundle_integration import (
     bundle_protocol_template_path,
     resolve_docx_template_path,
@@ -811,12 +810,16 @@ def collect_professions_for_v_prof_lookup(
                     add(pr)
         return out
     if persons_merged:
+        fs_set = bool((face_sheet_profession or "").strip())
         for p in persons_merged:
-            add(p.profession)
+            if not fs_set:
+                add(p.profession)
             add(p.profession2)
     if persons_row_source:
+        fs_set = bool((face_sheet_profession or "").strip())
         for r in persons_row_source:
-            add(r.profession)
+            if not fs_set:
+                add(r.profession)
             add(r.profession2)
     return out
 

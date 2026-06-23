@@ -112,10 +112,10 @@ HEADER_FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
 
 
 def _header_field_for_text(h: str) -> str | None:
-    for field, pats in HEADER_FIELD_PATTERNS.items():
+    for field_key, pats in HEADER_FIELD_PATTERNS.items():
         for p in pats:
             if p in h:
-                return field
+                return field_key
     return None
 
 

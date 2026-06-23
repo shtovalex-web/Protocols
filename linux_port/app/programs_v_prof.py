@@ -121,7 +121,6 @@ def _detect_layout_from_header(header: tuple[Any, ...]) -> VProfLayout:
 
     h1 = _normalize_header(header[1]) if cols > 1 else ""
     h2 = _normalize_header(header[2]) if cols > 2 else ""
-    h3 = _normalize_header(header[3]) if cols > 3 else ""
 
     if ("пп" in h1 or "первой помощ" in h1) and (
         "сиз" in h2 or "средств" in h2 and "защит" in h2

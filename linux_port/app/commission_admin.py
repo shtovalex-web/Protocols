@@ -20,10 +20,8 @@ from ui_theme import (
     FIELD_COMBO_STYLE,
     FIELD_DATE_STYLE,
     FIELD_STYLE,
-    UI,
     configure_editable_text,
     configure_listbox,
-    configure_readonly_text,
     pad,
 )
 
@@ -594,9 +592,9 @@ def commission_members_two_column_rows(mem_parts: list[str]) -> list[tuple[str, 
     right = mem_parts[mid:]
     rows: list[tuple[str, str]] = []
     for i in range(max(len(left), len(right))):
-        l = left[i] if i < len(left) else ""
+        left_txt = left[i] if i < len(left) else ""
         r = right[i] if i < len(right) else ""
-        rows.append((l, r))
+        rows.append((left_txt, r))
     return rows
 
 

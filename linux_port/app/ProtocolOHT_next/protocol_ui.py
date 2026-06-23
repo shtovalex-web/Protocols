@@ -66,7 +66,6 @@ from excel_data_cache import (
 from faq_viewer import open_changelog_window, open_faq_window
 from programs_v_prof import (
     VProfProfessionCandidate,
-    match_profession_in_v_prof,
     similar_professions_in_v_prof,
     v_prof_candidates_for_profession_list,
     v_prof_search_prefix_display,
@@ -91,7 +90,6 @@ from protocol_docx import (
     PROTOCOL_TEMPLATE_VARIABLES_DOC,
     ProtocolTemplateError,
     V_PROF_SHEET_NAME,
-    _v_prof_select_best_row,
     _all_document_paragraphs_ordered,
     _find_form_template_bounds,
     _iter_paragraph_runs,
@@ -111,6 +109,7 @@ from protocol_docx import (
     save_protocol_docx_from_template,
     v_program_merged_parts_for_raw_employee,
     v_program_ordered_unique_parts_global,
+    professions_for_v_prof_matrix_lookup,
 )
 from protocol_errors import append_error_journal
 from protocol_journal import (
@@ -122,7 +121,6 @@ from protocol_journal import (
     export_meta_protocol_no,
     export_protocol_journal_registry,
     format_journal_list_line,
-    get_all_protocols,
     get_protocols_journal_display,
     journal_ids_and_error_for_per_employee_batch,
     save_protocol,
@@ -150,7 +148,6 @@ from ui_theme import (
     UI,
     Colors,
     FIELD_COMBO_STYLE,
-    FIELD_DATE_STYLE,
     FIELD_STYLE,
     apply_color_scheme,
     apply_theme,
@@ -166,6 +163,7 @@ from ui_theme import (
     SPACING,
     SPACING_LG,
     SPACING_SM,
+    window_appears_maximized_or_fullscreen,
 )
 from ui_widgets import WidgetTooltip, attach_tooltip
 
@@ -405,50 +403,13 @@ class ProtocolApp(tk.Tk):
         self._v_prof_combo_selection_sig = None
 
     def _professions_for_v_prof_hint(self) -> list[str]:
-        """Должности для подсказки V_PROF: по каждому выбранному сотруднику."""
-        cfg = self._v_prof_combo_config
-        if cfg and cfg.enabled_by_fio:
-            out: list[str] = []
-            seen: set[str] = set()
-            for _fk, main in cfg.main_by_fio.items():
-                t = (main or "").strip()
-                if t and t.lower() not in seen:
-                    seen.add(t.lower())
-                    out.append(t)
-            for rec in self._collect_table_persons():
-                from v_program_registry_match import norm_profession_key
-
-                fk = norm_profession_key(rec.fio or "")
-                enabled = cfg.enabled_by_fio.get(fk)
-                if enabled is None:
-                    continue
-                for pr in (rec.profession, rec.profession2):
-                    t = (pr or "").strip()
-                    if not t or norm_profession_key(t) not in enabled:
-                        continue
-                    k = t.lower()
-                    if k in seen:
-                        continue
-                    seen.add(k)
-                    out.append(t)
-            return out
-        out2: list[str] = []
-        seen2: set[str] = set()
-        fs = self._face_sheet_profession()
-        if fs:
-            out2.append(fs)
-            seen2.add(fs.strip().lower())
-        for rec in self._collect_table_persons():
-            for pr in (rec.profession, rec.profession2):
-                t = (pr or "").strip()
-                if not t:
-                    continue
-                k = t.lower()
-                if k in seen2:
-                    continue
-                seen2.add(k)
-                out2.append(t)
-        return out2
+        """Должности для подсказки V_PROF (та же логика, что при сборке протокола «В»)."""
+        return professions_for_v_prof_matrix_lookup(
+            self._collect_table_persons_merged_by_fio(),
+            face_sheet_profession=self._face_sheet_profession() or None,
+            persons_row_source=self._collect_table_persons() or None,
+            **self._v_prof_combo_kwargs(),
+        )
 
     def _configure_v_prof_combinations(self, persons_raw: list[EmployeeRecord]) -> bool:
         """
@@ -558,8 +519,10 @@ class ProtocolApp(tk.Tk):
 
     def _fit_main_window_to_form(self) -> None:
         """Подогнать высоту главного окна под форму (расширить или сжать)."""
+        self.minsize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
+        if window_appears_maximized_or_fullscreen(self):
+            return
         if not self.var_technical_protocol.get():
-            self.minsize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
             self._apply_main_window_geometry()
             return
         self.update_idletasks()
@@ -570,9 +533,8 @@ class ProtocolApp(tk.Tk):
         cur_w = max(self.winfo_width(), MAIN_WINDOW_MIN_WIDTH)
         cur_x = self.winfo_x()
         cur_y = self.winfo_y()
-        if abs(self.winfo_height() - target_h) > 6:
+        if self.winfo_height() < target_h - 6:
             self.geometry(f"{cur_w}x{target_h}+{cur_x}+{cur_y}")
-        self.minsize(MAIN_WINDOW_MIN_WIDTH, min(target_h, cap_h))
 
     def _themed_toplevel(self, parent: tk.Misc | None = None) -> tk.Toplevel:
         """Дочернее окно с той же темой, что и главное (clam, поля, скругление)."""
@@ -3134,7 +3096,6 @@ class ProtocolApp(tk.Tk):
     def _resolve_program_keys_and_tech_extra(
         self, persons_raw: list[EmployeeRecord]
     ) -> tuple[list[str], list[str], dict[str, Any]]:
-        programs_path = self._programs_file_resolved()
         if self.var_technical_protocol.get():
             tinfo = self._get_selected_tech_v_program()
             if tinfo is None:
