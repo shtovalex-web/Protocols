@@ -12,6 +12,8 @@ from urllib.parse import quote
 
 import tkinter as tk
 
+from ui_theme import Colors
+
 # Коротко — в заголовке окна и панели задач (не обрезается).
 APP_WINDOW_TITLE = "ProtocolOOT — протоколы ОТ"
 # Полное название — в «О программе» и документации.
@@ -98,7 +100,7 @@ def populate_application_about_text(widget: tk.Text) -> None:
     if not email_link:
         return
 
-    widget.tag_configure(_ABOUT_EMAIL_TAG, foreground="#0563C1", underline=True)
+    widget.tag_configure(_ABOUT_EMAIL_TAG, foreground=Colors.link, underline=True)
 
     def _open_mail(_event=None) -> str:
         webbrowser.open(feedback_mailto_url(email_link))

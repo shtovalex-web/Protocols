@@ -344,9 +344,10 @@ def _rebuild_program_catalog_cache(
 ) -> None:
     try:
         from openpyxl import load_workbook
+        from bundle_integration import resolve_openpyxl_workbook_path
     except ImportError:
         return
-    wb = load_workbook(path, read_only=True, data_only=True)
+    wb = load_workbook(resolve_openpyxl_workbook_path(path), read_only=True, data_only=True)
     try:
         title, src_row, b_hours = _read_b_title_from_wb(wb)
         from programs_v_prof import v_prof_layout_for_path
@@ -564,9 +565,10 @@ def get_cached_v_prof_column(path: Path, column_one_based: int) -> str:
     else:
         try:
             from openpyxl import load_workbook
+            from bundle_integration import resolve_openpyxl_workbook_path
         except ImportError:
             return ""
-        wb = load_workbook(path, read_only=True, data_only=True)
+        wb = load_workbook(resolve_openpyxl_workbook_path(path), read_only=True, data_only=True)
         try:
             return _read_v_prof_first_in_column_from_wb(wb, column_one_based)
         finally:
