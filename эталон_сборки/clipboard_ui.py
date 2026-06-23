@@ -337,15 +337,30 @@ def _popup_context_menu(event: tk.Event) -> str | None:
                 menu.grab_release()
         return "break"
 
-    paste_fn = lambda: _paste_once(w, lambda: _paste_target(w, kind))
+    def paste_fn() -> None:
+        _paste_once(w, lambda: _paste_target(w, kind))
+
     if kind == "text":
-        copy_fn = lambda: _copy_from_text(w)
-        cut_fn = lambda: _cut_from_text(w)
-        select_fn = lambda: _select_all_text(w)
+
+        def copy_fn() -> None:
+            _copy_from_text(w)
+
+        def cut_fn() -> None:
+            _cut_from_text(w)
+
+        def select_fn() -> None:
+            _select_all_text(w)
+
     else:
-        copy_fn = lambda: _copy_from_entry(w)
-        cut_fn = lambda: _cut_from_entry(w)
-        select_fn = lambda: _select_all_entry(w)
+
+        def copy_fn() -> None:
+            _copy_from_entry(w)
+
+        def cut_fn() -> None:
+            _cut_from_entry(w)
+
+        def select_fn() -> None:
+            _select_all_entry(w)
 
     menu.add_command(label="Вырезать", command=cut_fn)
     menu.add_command(label="Копировать", command=copy_fn)

@@ -44,9 +44,9 @@ python tools/pack_linux_build.py
 ```bash
 cd ProtocolOOT_linux_build
 chmod +x *.sh
-./check_env.sh
-./install_deps.sh    # при FAIL по tkinter/libpython
-./build.sh
+./install_deps.sh    # системные пакеты и pip (tkinter, libpython, ruff…)
+./check_env.sh       # проверка окружения
+./build.sh           # или ./build.sh --no-verify при проблемах с ruff
 ```
 
 Если комплект на `/mnt/c/...` в WSL: `./sync_workspace.sh`, затем сборка в `~/ProtocolOOT_linux_build`.
@@ -57,8 +57,8 @@ chmod +x *.sh
 git clone -b linux https://github.com/shtovalex-web/Protocols.git
 cd Protocols/linux_port
 chmod +x *.sh
-./check_env.sh
 ./install_deps.sh
+./check_env.sh
 ./build.sh
 ```
 
@@ -79,10 +79,12 @@ zip -r ../out_linux.zip .
 |-------|--------|
 | `python3-tk` | tkinter (проверка перед сборкой) |
 | `binutils` | `objdump` для PyInstaller |
-| `python3-dev` | `libpython3*.so` |
+| `python3-dev` | `libpython3*.so` (на ALT: **`python3.11-dev`** + **`libpython3.11`**, не `python3.11-devel`) |
 | `requirements-build.txt` | PyInstaller, ruff и зависимости приложения (`-r requirements.txt`) |
 
 Debian/Ubuntu: `sudo apt install python3-tk python3-venv python3-dev binutils`
+
+**ALT Linux / p10:** `sudo apt-get install -y python3.11 python3.11-dev libpython3.11 python3-tk binutils`. Для headless-проверок tkinter: **`xorg-xvfb`** (не пакет `xvfb`). LibreOffice: `libreoffice`. Подробнее — `linux_port/release/README_BUILD_LINUX.txt`.
 
 ### Если сборка не стартует
 
@@ -92,9 +94,10 @@ Debian/Ubuntu: `sudo apt install python3-tk python3-venv python3-dev binutils`
 | `Нет linux_port/app/main.py` | `python3 linux_port/prepare.py` или клон `-b linux` |
 | `No module named openpyxl` / `docx` | `./install_deps.sh` или `pip install -r linux_port/requirements-build.txt` |
 | `/usr/bin/env: bash\r` | `python3 fix_crlf.py && chmod +x *.sh` или `sed -i 's/\r$//' *.sh` |
+| ruff / verify_linux при сборке | Свежий комплект `ProtocolOOT_linux_build` (в корне есть `ruff.toml`); иначе `./build.sh --no-verify` |
 | Ошибки venv/PyInstaller на VirtualBox | Клонируйте проект в `~/Protocols` внутри VM, не на общей папке Windows |
 
-Сборка без проверок (если ruff мешает): `./build_linux.sh --no-verify`
+Сборка без проверок: `./build.sh --no-verify` или `./build_linux.sh --no-verify` (в git-клоне).
 
 На ALT Linux и в VM: собирайте в локальной копии (`~/Protocols`), не на смонтированной папке VirtualBox — иначе ломаются симлинки venv/PyInstaller (см. опыт [grafik-pz](https://github.com/shtovalex-web/grafik-pz/blob/main/docs/linux.md)).
 

@@ -40,7 +40,7 @@ _skip() {
 }
 
 _alt_python_hint() {
-  echo "ALT Linux: sudo apt install python3.11 python3.11-tools python3.11-devel libpython3.11 python3-module-pip python3-modules-tkinter"
+  echo "ALT Linux: sudo apt install python3.11 python3.11-tools python3.11-dev libpython3.11 python3-module-pip python3-modules-tkinter"
   echo "Затем: rm -rf .venv-linux && ./install_deps.sh"
 }
 
@@ -83,7 +83,7 @@ else
   if is_altlinux; then
     _fail "Версия Python (сборка)" \
       "Сейчас: $(python3 --version 2>&1). Нужен python3.11:" \
-      "sudo apt install python3.11 python3.11-tools python3.11-devel libpython3.11"
+      "sudo apt install python3.11 python3.11-tools python3.11-dev libpython3.11"
   else
     _fail "Версия Python (сборка)" \
       "Нужен Python 3.10+, сейчас: $(python3 --version 2>&1)" \
@@ -118,16 +118,19 @@ fi
 
 # 7. libpython для BUILD_PYTHON
 if has_libpython_for "$BUILD_PYTHON"; then
-  _ok "libpython ($BUILD_PYTHON)" "$(python_short_version "$BUILD_PYTHON")"
+  LP_DETAIL="$("$BUILD_PYTHON" "$KIT_ROOT/lib/libpython_probe.py" --verbose 2>/dev/null || true)"
+  _ok "libpython ($BUILD_PYTHON)" "${LP_DETAIL:-$(python_short_version "$BUILD_PYTHON")}"
+elif [[ ! -f "$VENV_DIR/bin/python" ]]; then
+  _skip "libpython ($BUILD_PYTHON)" "после ./install_deps.sh"
 else
   if is_altlinux; then
     _fail "libpython" \
-      "sudo apt install libpython3.11 python3.11-devel" \
-      "sudo apt install python3.11 python3.11-tools python3-module-pip" \
-      "rm -rf .venv-linux && ./install_deps.sh"
+      "sudo apt-get install -y libpython3.11 python3.11-dev" \
+      "rm -rf .venv-linux && ./install_deps.sh && ./check_env.sh"
   else
     _fail "libpython" \
-      "sudo apt install python3-dev (или python3.11-dev для python3.11)"
+      "sudo apt-get install -y python3-dev (или python3.11-dev)" \
+      "./install_deps.sh && ./check_env.sh"
   fi
 fi
 
@@ -208,5 +211,10 @@ if (( FAILS > 0 )); then
   fi
   exit 1
 fi
-echo "Итог: проверки пройдены. Запуск: ./build.sh"
+echo "Итог: проверки пройдены."
+if [[ ! -f "$VENV_DIR/bin/python" ]]; then
+  echo "Дальше: ./install_deps.sh && ./build.sh"
+else
+  echo "Запуск: ./build.sh"
+fi
 exit 0

@@ -165,5 +165,67 @@ class TestUITheme(unittest.TestCase):
             root.destroy()
 
 
+class _FakeWindow:
+    def __init__(
+        self,
+        *,
+        width: int,
+        height: int,
+        screen_w: int = 1920,
+        screen_h: int = 1080,
+        wm_state: str = "normal",
+        zoomed: bool = False,
+    ) -> None:
+        self._width = width
+        self._height = height
+        self._screen_w = screen_w
+        self._screen_h = screen_h
+        self._wm_state = wm_state
+        self._zoomed = zoomed
+
+    def wm_state(self) -> str:
+        return self._wm_state
+
+    def attributes(self, name: str) -> bool:
+        if name == "-zoomed":
+            return self._zoomed
+        raise tk.TclError(name)
+
+    def update_idletasks(self) -> None:
+        pass
+
+    def winfo_screenwidth(self) -> int:
+        return self._screen_w
+
+    def winfo_screenheight(self) -> int:
+        return self._screen_h
+
+    def winfo_width(self) -> int:
+        return self._width
+
+    def winfo_height(self) -> int:
+        return self._height
+
+
+class TestWindowMaximizedDetection(unittest.TestCase):
+    def test_wm_state_zoomed(self):
+        from ui_theme import window_appears_maximized_or_fullscreen
+
+        win = _FakeWindow(width=800, height=600, wm_state="zoomed")
+        self.assertTrue(window_appears_maximized_or_fullscreen(win))
+
+    def test_near_fullscreen_size(self):
+        from ui_theme import window_appears_maximized_or_fullscreen
+
+        win = _FakeWindow(width=1880, height=1000, screen_w=1920, screen_h=1080)
+        self.assertTrue(window_appears_maximized_or_fullscreen(win))
+
+    def test_normal_window_not_maximized(self):
+        from ui_theme import window_appears_maximized_or_fullscreen
+
+        win = _FakeWindow(width=900, height=700)
+        self.assertFalse(window_appears_maximized_or_fullscreen(win))
+
+
 if __name__ == "__main__":
     unittest.main()

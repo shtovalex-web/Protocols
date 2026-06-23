@@ -40,6 +40,7 @@ SHELL_SCRIPTS = (
 COPY_FILES = (
     "build_linux.py",
     "verify_linux.py",
+    "ruff_linux.py",
     "fix_crlf.py",
     "requirements.txt",
     "requirements-build.txt",
@@ -132,6 +133,10 @@ def pack(output: Path, *, skip_prepare: bool = False) -> Path:
     if readme.is_file():
         shutil.copy2(readme, output / "README_BUILD_LINUX.txt")
 
+    ruff_cfg = ROOT / "ruff.toml"
+    if ruff_cfg.is_file():
+        shutil.copy2(ruff_cfg, output / "ruff.toml")
+
     return output
 
 
@@ -153,6 +158,7 @@ def main() -> int:
     print("На Linux:")
     print(f"  cd {out.name}")
     print("  chmod +x *.sh")
+    print("  ./install_deps.sh")
     print("  ./check_env.sh")
     print("  ./build.sh")
     print()

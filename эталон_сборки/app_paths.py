@@ -6,7 +6,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_BUNDLE_MARKER = "default_protocol.docx"
+_BUNDLE_MARKERS = (
+    "default_protocol.docx",
+    "default_protocol.odt",
+)
 # В исходниках шаблоны и справка — в bundle/; в поставке .exe — в подпапке data/ (не в корне с exe).
 _BUNDLE_SUBDIR = "bundle"
 _RESOURCE_DATA_SUBDIR = "data"
@@ -23,7 +26,7 @@ def application_exe_dir() -> Path:
 
 def application_user_dir() -> Path:
     """
-    Данные пользователя: protocols.db, Excel, Protokol/, Mintrud/ и т.д.
+    Данные пользователя: protocols.db, Excel, Protokol/, Mintrud/ и t.д.
 
     Каталог с программой: рядом с .exe (сборка) или корень проекта (исходники).
     """
@@ -35,9 +38,13 @@ def application_error_log_path() -> Path:
     return application_user_dir() / ERROR_LOG_FILENAME
 
 
+def _dir_has_bundle_marker(folder: Path) -> bool:
+    return any((folder / name).is_file() for name in _BUNDLE_MARKERS)
+
+
 def _first_dir_with_marker(candidates: list[Path]) -> Path | None:
     for folder in candidates:
-        if folder.is_dir() and (folder / _BUNDLE_MARKER).is_file():
+        if folder.is_dir() and _dir_has_bundle_marker(folder):
             return folder
     return None
 

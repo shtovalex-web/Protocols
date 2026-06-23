@@ -9,7 +9,7 @@ source "$KIT_ROOT/lib/sh_common.sh"
 
 BUILD_PYTHON="$(resolve_build_python || true)"
 if ! "$BUILD_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-  echo "Нужен Python 3.10+ (для ALT: sudo apt install python3.11 python3.11-tools python3.11-devel libpython3.11)." >&2
+  echo "Нужен Python 3.10+ (для ALT: sudo apt install python3.11 python3.11-tools python3.11-dev libpython3.11)." >&2
   exit 1
 fi
 echo "Python для сборки: $BUILD_PYTHON ($("$BUILD_PYTHON" --version 2>&1))"

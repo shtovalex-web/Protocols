@@ -18,12 +18,9 @@ _NEXT = APP / "ProtocolOHT_next"
 
 
 def run_ruff() -> None:
-    r = subprocess.run(
-        [sys.executable, "-m", "ruff", "check", str(APP)],
-        cwd=LINUX_PORT,
-        capture_output=True,
-        text=True,
-    )
+    from ruff_linux import run_ruff_on_app
+
+    r = run_ruff_on_app(linux_port=LINUX_PORT, app_dir=APP, cwd=LINUX_PORT, capture=True)
     if r.returncode == 0:
         print("ruff check (app/): OK")
         return

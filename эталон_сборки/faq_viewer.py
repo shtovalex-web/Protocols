@@ -11,7 +11,7 @@ from tkinter import messagebox, ttk
 from app_paths import application_bundle_dir
 from clipboard_ui import register_clipboard_window
 from protocol_embedded_assets import apply_embedded_window_icon_from_parent
-from ui_theme import Colors, SPACING, configure_readonly_text
+from ui_theme import Colors, SPACING, apply_theme_to_window, configure_readonly_text
 from ui_widgets import build_dialog_button_row, build_search_toolbar
 
 FAQ_CANDIDATE_NAMES = ("FAQ.txt", "FAQ.md")
@@ -64,6 +64,7 @@ def open_text_help_window(
         return
 
     win = tk.Toplevel(parent)
+    apply_theme_to_window(win)
     apply_embedded_window_icon_from_parent(win, parent)
     win.title(title)
     win.minsize(520, 400)

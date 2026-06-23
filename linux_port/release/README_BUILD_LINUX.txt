@@ -16,8 +16,8 @@ python tools/pack_linux_build.py
 ```bash
 cd ProtocolOOT_linux_build   # или linux_port/ из git clone -b linux
 chmod +x *.sh
-./check_env.sh                 # пошаговая диагностика (версия Python, tkinter, …)
-./install_deps.sh              # системные пакеты + pip (опционально)
+./install_deps.sh              # системные пакеты (libpython, tkinter) + venv
+./check_env.sh                 # диагностика
 ./build.sh                     # сборка → release/out_linux/ProtocolOOT
 ```
 
@@ -63,12 +63,15 @@ ALT Linux (p10):
 
 ```bash
 sudo apt-get install -y python3.11 python3.11-tools python3-module-pip \
-  libpython3.11 python3.11-devel python3-modules-tkinter binutils
+  libpython3.11 python3.11-dev python3-modules-tkinter binutils
+# опционально для PDF: xorg-xvfb (не xvfb), libreoffice
 rm -rf .venv-linux
 ./install_deps.sh
 ./check_env.sh
 ./build.sh
 ```
+
+На ALT пакет виртуального дисплея — **`xorg-xvfb`**, не `xvfb`. Для сборки PyInstaller он не обязателен.
 
 Системный `python3` может быть 3.9 — для сборки используется **python3.11** автоматически.
 

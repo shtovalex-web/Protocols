@@ -12,10 +12,13 @@ RELEASE_SCRIPT="$KIT_ROOT/release/build_release_linux.py"
 BUILD_PYTHON="$(resolve_build_python || true)"
 
 SKIP_CHECK=0
+NO_VERIFY=0
 BUILD_ARGS=()
 for arg in "$@"; do
   if [[ "$arg" == "--skip-check" ]]; then
     SKIP_CHECK=1
+  elif [[ "$arg" == "--no-verify" ]]; then
+    NO_VERIFY=1
   else
     BUILD_ARGS+=("$arg")
   fi
@@ -31,11 +34,16 @@ if [[ ! -f "$RELEASE_SCRIPT" ]]; then
 fi
 
 if ! "$BUILD_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-  echo "Нужен Python 3.10+. На ALT: sudo apt install python3.11 python3.11-tools python3.11-devel libpython3.11" >&2
+  echo "Нужен Python 3.10+. На ALT: sudo apt install python3.11 python3.11-tools python3.11-dev libpython3.11" >&2
   exit 1
 fi
 
 ensure_venv "$KIT_ROOT" "$BUILD_PYTHON"
 python -m pip install -q --upgrade pip
 python -m pip install -q -r "$KIT_ROOT/requirements-build.txt"
-python "$RELEASE_SCRIPT" --local "${BUILD_ARGS[@]}"
+RELEASE_ARGS=(--local)
+if [[ "$NO_VERIFY" -eq 1 ]]; then
+  RELEASE_ARGS+=(--no-verify)
+fi
+RELEASE_ARGS+=("${BUILD_ARGS[@]}")
+python "$RELEASE_SCRIPT" "${RELEASE_ARGS[@]}"

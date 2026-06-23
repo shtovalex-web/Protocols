@@ -66,7 +66,6 @@ from excel_data_cache import (
 from faq_viewer import open_changelog_window, open_faq_window
 from programs_v_prof import (
     VProfProfessionCandidate,
-    match_profession_in_v_prof,
     similar_professions_in_v_prof,
     v_prof_candidates_for_profession_list,
     v_prof_search_prefix_display,
@@ -91,7 +90,6 @@ from protocol_docx import (
     PROTOCOL_TEMPLATE_VARIABLES_DOC,
     ProtocolTemplateError,
     V_PROF_SHEET_NAME,
-    _v_prof_select_best_row,
     _all_document_paragraphs_ordered,
     _find_form_template_bounds,
     _iter_paragraph_runs,
@@ -122,7 +120,6 @@ from protocol_journal import (
     export_meta_protocol_no,
     export_protocol_journal_registry,
     format_journal_list_line,
-    get_all_protocols,
     get_protocols_journal_display,
     journal_ids_and_error_for_per_employee_batch,
     save_protocol,
@@ -146,7 +143,26 @@ from protocol_paths import (
 from protocol_app_info import APP_FULL_NAME, APP_WINDOW_TITLE, populate_application_about_text
 from protocol_embedded_assets import embedded_logo_png_bytes
 from protocol_recovery import export_recovery_templates_to_folder
-from ui_theme import UI, Colors, apply_theme, apply_startup_geometry, configure_listbox, configure_readonly_text, pad, SPACING, SPACING_LG, SPACING_SM
+from ui_theme import (
+    UI,
+    Colors,
+    FIELD_COMBO_STYLE,
+    FIELD_STYLE,
+    apply_color_scheme,
+    apply_theme,
+    apply_startup_geometry,
+    apply_theme_to_window,
+    color_scheme_choices,
+    configure_listbox,
+    configure_readonly_text,
+    current_color_scheme_id,
+    load_color_scheme_from_settings,
+    pad,
+    SCHEME_LABELS,
+    SPACING,
+    SPACING_LG,
+    SPACING_SM,
+)
 from ui_widgets import WidgetTooltip, attach_tooltip
 
 
@@ -227,6 +243,9 @@ CHECK_TYPE_OPTIONS = ("плановая", "внеплановая")
 # Ширина полей формы (символы): длинные должности из V_PROF не обрезаются.
 MAIN_FORM_ENTRY_CHARS = 72
 MAIN_WINDOW_MIN_WIDTH = 900
+MAIN_WINDOW_MIN_HEIGHT = 560
+EMPLOYEE_LIST_HEIGHT_NORMAL = 16
+EMPLOYEE_LIST_HEIGHT_TECH = 8
 # Текст в окне журнала, если в записи не сохранён content (намеренно).
 JOURNAL_PLACEHOLDER_NO_BODY = (
     "Полный текст протокола в журнал не сохраняется (меньше персональных данных в базе).\n\n"
@@ -298,10 +317,12 @@ class ProtocolApp(tk.Tk):
         self._window_icon_ico_path: Path | None = None
         self._load_embedded_branding_images()
         self._apply_icon()
+        load_color_scheme_from_settings()
+        self._ui_scheme_var = tk.StringVar(value=current_color_scheme_id())
         apply_theme(self)
         self.title(APP_WINDOW_TITLE)
         # Предпросмотр — в отдельном окне; размер подбирается по содержимому.
-        self.minsize(MAIN_WINDOW_MIN_WIDTH, 560)
+        self.minsize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
         self._build_menu()
@@ -318,7 +339,13 @@ class ProtocolApp(tk.Tk):
         self._sync_status_bar()
         self.update_idletasks()
         self.deiconify()
-        self.after_idle(lambda: apply_startup_geometry(self, min_width=MAIN_WINDOW_MIN_WIDTH, min_height=560))
+        self.after_idle(
+            lambda: apply_startup_geometry(
+                self,
+                min_width=MAIN_WINDOW_MIN_WIDTH,
+                min_height=MAIN_WINDOW_MIN_HEIGHT,
+            )
+        )
         if journal_duplicates_removed > 0:
             self.after(400, lambda: self._maybe_notify_journal_purge(journal_duplicates_removed))
 
@@ -525,6 +552,88 @@ class ProtocolApp(tk.Tk):
             y = max(0, (sh - height) // 2)
         wdg.geometry(f"{width}x{height}+{x}+{y}")
 
+    def _fit_main_window_to_form(self) -> None:
+        """Подогнать высоту главного окна под форму (расширить или сжать)."""
+        if not self.var_technical_protocol.get():
+            self.minsize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
+            self._apply_main_window_geometry()
+            return
+        self.update_idletasks()
+        sh = self.winfo_screenheight()
+        req_h = max(MAIN_WINDOW_MIN_HEIGHT, self.winfo_reqheight() + 24)
+        cap_h = max(MAIN_WINDOW_MIN_HEIGHT, sh - 48)
+        target_h = min(req_h, cap_h)
+        cur_w = max(self.winfo_width(), MAIN_WINDOW_MIN_WIDTH)
+        cur_x = self.winfo_x()
+        cur_y = self.winfo_y()
+        if abs(self.winfo_height() - target_h) > 6:
+            self.geometry(f"{cur_w}x{target_h}+{cur_x}+{cur_y}")
+        self.minsize(MAIN_WINDOW_MIN_WIDTH, min(target_h, cap_h))
+
+    def _themed_toplevel(self, parent: tk.Misc | None = None) -> tk.Toplevel:
+        """Дочернее окно с той же темой, что и главное (clam, поля, скругление)."""
+        win = tk.Toplevel(parent if parent is not None else self)
+        apply_theme_to_window(win)
+        self._apply_embedded_window_icon(win)
+        return win
+
+    def _visible_toplevel(self, win: tk.Misc | None) -> bool:
+        if win is None:
+            return False
+        try:
+            return bool(win.winfo_exists()) and win.winfo_viewable()
+        except tk.TclError:
+            return False
+
+    def _dialog_parent(self) -> tk.Misc:
+        if self._visible_toplevel(self._admin_win):
+            return self._admin_win  # type: ignore[return-value]
+        if self._visible_toplevel(self._commission_win):
+            return self._commission_win  # type: ignore[return-value]
+        return self
+
+    def _make_modal(self, win: tk.Toplevel, *, parent: tk.Misc | None = None) -> None:
+        par = parent if parent is not None else self
+        win.transient(par)
+        try:
+            win.grab_set()
+        except tk.TclError:
+            pass
+        win.lift()
+        try:
+            win.focus_force()
+        except tk.TclError:
+            pass
+
+    def _release_modal(self, win: tk.Misc | None) -> None:
+        if win is None:
+            return
+        try:
+            if win.winfo_exists():
+                win.grab_release()
+        except tk.TclError:
+            pass
+
+    def _restore_parent_modal(self, parent: tk.Misc | None) -> None:
+        if parent is None or parent is self or not isinstance(parent, tk.Toplevel):
+            return
+        if not self._visible_toplevel(parent):
+            return
+        try:
+            parent.grab_set()
+            parent.lift()
+            parent.focus_force()
+        except tk.TclError:
+            pass
+
+    def _close_modal_window(self, win: tk.Toplevel, *, parent: tk.Misc | None = None) -> None:
+        self._release_modal(win)
+        try:
+            win.destroy()
+        except tk.TclError:
+            pass
+        self._restore_parent_modal(parent if parent is not None else self)
+
     def _ensure_main_window_width_for_text(self, *texts: str) -> None:
         """Расширить главное окно, если длинный текст (должность V_PROF) не помещается."""
         samples = [t for t in texts if (t or "").strip()]
@@ -662,6 +771,18 @@ class ProtocolApp(tk.Tk):
             command=self._open_mintrud_export_window,
         )
 
+        view_m = tk.Menu(mbar, tearoff=0)
+        mbar.add_cascade(label="Вид", menu=view_m)
+        scheme_m = tk.Menu(view_m, tearoff=0)
+        view_m.add_cascade(label="Цветовая схема", menu=scheme_m)
+        for sid, label in color_scheme_choices():
+            scheme_m.add_radiobutton(
+                label=label,
+                variable=self._ui_scheme_var,
+                value=sid,
+                command=self._apply_ui_color_scheme,
+            )
+
         help_m = tk.Menu(mbar, tearoff=0)
         mbar.add_cascade(label="Справка", menu=help_m)
         help_m.add_command(
@@ -694,8 +815,7 @@ class ProtocolApp(tk.Tk):
         )
 
     def _show_about_window(self) -> None:
-        win = tk.Toplevel(self)
-        self._apply_embedded_window_icon(win)
+        win = self._themed_toplevel()
         win.title("О программе")
         win.transient(self)
         win.resizable(True, True)
@@ -723,7 +843,8 @@ class ProtocolApp(tk.Tk):
         bf = ttk.Frame(outer)
         span = 2 if self._embedded_logo_header is not None else 1
         bf.grid(row=2, column=0, columnspan=span, pady=(12, 0), sticky=tk.E)
-        ttk.Button(bf, text="Закрыть", command=win.destroy).pack(side=tk.RIGHT)
+        ttk.Button(bf, text="Закрыть", command=lambda: self._close_modal_window(win)).pack(side=tk.RIGHT)
+        self._make_modal(win)
         win.update_idletasks()
         try:
             win.focus_set()
@@ -740,8 +861,6 @@ class ProtocolApp(tk.Tk):
         main.rowconfigure(0, weight=0)
         main.rowconfigure(1, weight=1)
         main.rowconfigure(2, weight=0)
-        main.rowconfigure(3, weight=0)
-        main.rowconfigure(4, weight=0)
 
         db_bar = ttk.Frame(main, style="Toolbar.TFrame", padding=(SPACING, SPACING_SM))
         db_bar.grid(row=0, column=0, sticky=tk.EW, **g)
@@ -760,49 +879,47 @@ class ProtocolApp(tk.Tk):
 
         lf = ttk.Labelframe(main, text="Формирование протокола", style="Card.TLabelframe")
         lf.grid(row=1, column=0, sticky=tk.NSEW, **g)
-        lf.columnconfigure(0, weight=1)
-        lf.columnconfigure(1, weight=1)
-        lf.rowconfigure(0, weight=1)
+        lf.columnconfigure(0, weight=2, minsize=280)
+        lf.columnconfigure(1, weight=3, minsize=360)
+        lf.rowconfigure(1, weight=1)
+        lf.rowconfigure(2, weight=0)
 
-        left_fr = ttk.Frame(lf)
-        left_fr.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, SPACING))
-        left_fr.columnconfigure(1, weight=1)
-        left_fr.rowconfigure(2, weight=1)
-
-        right_fr = ttk.Frame(lf)
-        right_fr.grid(row=0, column=1, sticky=tk.NSEW)
-        right_fr.columnconfigure(1, weight=1)
-
-        ttk.Label(left_fr, text="Поиск:").grid(row=0, column=0, sticky=tk.W, **g)
+        filter_fr = ttk.Frame(lf)
+        filter_fr.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, SPACING_SM))
+        filter_fr.columnconfigure(1, weight=1)
+        filter_fr.columnconfigure(3, weight=1)
+        ttk.Label(filter_fr, text="Поиск:").grid(row=0, column=0, sticky=tk.W, padx=(0, SPACING_SM))
         self.entry_emp_search = ttk.Entry(
-            left_fr,
+            filter_fr,
             textvariable=self.var_emp_search,
-            width=MAIN_FORM_ENTRY_CHARS,
             style="Field.TEntry",
         )
-        self.entry_emp_search.grid(row=0, column=1, sticky=tk.EW, **g)
+        self.entry_emp_search.grid(row=0, column=1, sticky=tk.EW, padx=(0, SPACING_LG))
         _attach_tooltip(
             self.entry_emp_search,
             "Фильтр по ФИО, должности, подразделению, СНИЛС. Ctrl+F — быстрый переход в это поле.",
         )
-
-        ttk.Label(left_fr, text="Подразделение:").grid(row=1, column=0, sticky=tk.W, **g)
-        self.entry_subdivision = ttk.Entry(left_fr, width=MAIN_FORM_ENTRY_CHARS, style="Field.TEntry")
-        self.entry_subdivision.grid(row=1, column=1, sticky=tk.EW, **g)
+        ttk.Label(filter_fr, text="Подразделение:").grid(row=0, column=2, sticky=tk.W, padx=(0, SPACING_SM))
+        self.entry_subdivision = ttk.Entry(filter_fr, style="Field.TEntry")
+        self.entry_subdivision.grid(row=0, column=3, sticky=tk.EW)
         _attach_tooltip(
             self.entry_subdivision,
             "Подразделение для протокола. При выборе сотрудника из списка подставляется из Excel.",
         )
 
-        emp_box = ttk.Frame(left_fr)
-        emp_box.grid(row=2, column=0, columnspan=2, sticky=tk.NSEW, **g)
+        emp_lf = ttk.Labelframe(lf, text="Сотрудники", padding=SPACING_SM)
+        emp_lf.grid(row=1, column=0, sticky=tk.NSEW, padx=(0, SPACING))
+        emp_lf.columnconfigure(0, weight=1)
+        emp_lf.rowconfigure(0, weight=1)
+        emp_box = ttk.Frame(emp_lf)
+        emp_box.grid(row=0, column=0, sticky=tk.NSEW)
         emp_box.columnconfigure(0, weight=1)
         emp_box.rowconfigure(0, weight=1)
         sb_emp = ttk.Scrollbar(emp_box)
         sb_emp.grid(row=0, column=1, sticky=tk.NS)
         self.list_employees = tk.Listbox(
             emp_box,
-            height=14,
+            height=EMPLOYEE_LIST_HEIGHT_NORMAL,
             selectmode=tk.EXTENDED,
             exportselection=False,
             yscrollcommand=sb_emp.set,
@@ -821,19 +938,27 @@ class ProtocolApp(tk.Tk):
             "Ctrl и Shift — выбор нескольких сотрудников.",
         )
 
-        ttk.Label(right_fr, text="ФИО:").grid(row=0, column=0, sticky=tk.W, **g)
-        self.entry_fio = ttk.Entry(right_fr, width=MAIN_FORM_ENTRY_CHARS, style="Field.TEntry")
-        self.entry_fio.grid(row=0, column=1, sticky=tk.EW, **g)
+        right_col = ttk.Frame(lf)
+        right_col.grid(row=1, column=1, sticky=tk.NSEW)
+        right_col.columnconfigure(0, weight=1)
+
+        person_lf = ttk.Labelframe(right_col, text="Участник", padding=SPACING_SM)
+        person_lf.grid(row=0, column=0, sticky=tk.EW, pady=(0, SPACING_SM))
+        person_lf.columnconfigure(1, weight=1)
+
+        ttk.Label(person_lf, text="ФИО:").grid(row=0, column=0, sticky=tk.W, **g_sm)
+        self.entry_fio = ttk.Entry(person_lf, style="Field.TEntry")
+        self.entry_fio.grid(row=0, column=1, sticky=tk.EW, **g_sm)
         _attach_tooltip(
             self.entry_fio,
             "Если человека нет в списке выше — введите ФИО полностью (фамилия, имя, отчество).",
         )
 
-        ttk.Label(right_fr, text="Должность:").grid(row=1, column=0, sticky=tk.NW, **g)
-        pos_col = ttk.Frame(right_fr)
-        pos_col.grid(row=1, column=1, sticky=tk.EW, **g)
+        ttk.Label(person_lf, text="Должность:").grid(row=1, column=0, sticky=tk.NW, **g_sm)
+        pos_col = ttk.Frame(person_lf)
+        pos_col.grid(row=1, column=1, sticky=tk.EW, **g_sm)
         pos_col.columnconfigure(0, weight=1)
-        self.entry_position = ttk.Entry(pos_col, width=MAIN_FORM_ENTRY_CHARS, style="Field.TEntry")
+        self.entry_position = ttk.Entry(pos_col, style="Field.TEntry")
         self.entry_position.grid(row=0, column=0, columnspan=2, sticky=tk.EW)
         self.lbl_v_prof_match = ttk.Label(pos_col, text="", style="Hint.TLabel")
         self.lbl_v_prof_match.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
@@ -848,7 +973,6 @@ class ProtocolApp(tk.Tk):
         self.cmb_v_prof_suggest = ttk.Combobox(
             self._v_prof_suggest_fr,
             state="readonly",
-            width=MAIN_FORM_ENTRY_CHARS,
             font=UI.font_body,
         )
         self.cmb_v_prof_suggest.grid(row=0, column=1, sticky=tk.EW)
@@ -874,8 +998,56 @@ class ProtocolApp(tk.Tk):
             f"Сопоставление с листом {V_PROF_SHEET_NAME} — под полем.",
         )
 
-        prog_lf = ttk.Labelframe(right_fr, text="Программы обучения", padding=8)
-        prog_lf.grid(row=2, column=0, columnspan=2, sticky=tk.EW, **g)
+        meta_lf = ttk.Labelframe(right_col, text="Реквизиты протокола", padding=SPACING_SM)
+        meta_lf.grid(row=1, column=0, sticky=tk.EW)
+        meta_lf.columnconfigure(1, weight=1)
+        meta_lf.columnconfigure(3, weight=1)
+
+        ttk.Label(meta_lf, text="Дата:").grid(row=0, column=0, sticky=tk.W, **g_sm)
+        self.entry_date = ttk.Entry(meta_lf, width=14, style="FieldDate.TEntry")
+        self.entry_date.grid(row=0, column=1, sticky=tk.W, **g_sm)
+        self.entry_date.insert(0, date.today().strftime("%d.%m.%Y"))
+        _attach_tooltip(
+            self.entry_date,
+            "Дата протокола. Формат ДД.ММ.ГГГГ или ДД.ММ.ГГ. Участвует в номере в бланке Word (номер-месяц-год).",
+        )
+
+        ttk.Label(meta_lf, text="№ протокола:").grid(row=0, column=2, sticky=tk.W, **g_sm)
+        self.entry_protocol_no = ttk.Entry(meta_lf, width=18, style="Field.TEntry")
+        self.entry_protocol_no.grid(row=0, column=3, sticky=tk.EW, **g_sm)
+        _saved_protocol_no = load_last_protocol_no()
+        if _saved_protocol_no:
+            self.entry_protocol_no.insert(0, _saved_protocol_no)
+        _attach_tooltip(
+            self.entry_protocol_no,
+            "В бланк Word подставляется строка вида «номер-месяц-год» по этому полю и полю «Дата» "
+            "(см. также «Переменные шаблона» в настройках).",
+        )
+
+        ttk.Label(meta_lf, text="Оценка:").grid(row=1, column=0, sticky=tk.W, **g_sm)
+        self.combo_grade = ttk.Combobox(
+            meta_lf,
+            values=GRADE_OPTIONS,
+            state="readonly",
+            width=28,
+            style=FIELD_COMBO_STYLE,
+        )
+        self.combo_grade.grid(row=1, column=1, sticky=tk.EW, **g_sm)
+        self.combo_grade.current(0)
+
+        ttk.Label(meta_lf, text="Проверка знаний:").grid(row=1, column=2, sticky=tk.W, **g_sm)
+        self.combo_check_type = ttk.Combobox(
+            meta_lf,
+            values=CHECK_TYPE_OPTIONS,
+            state="readonly",
+            width=28,
+            style=FIELD_COMBO_STYLE,
+        )
+        self.combo_check_type.grid(row=1, column=3, sticky=tk.EW, **g_sm)
+        self.combo_check_type.current(0)
+
+        prog_lf = ttk.Labelframe(right_col, text="Программы обучения", padding=SPACING_SM)
+        prog_lf.grid(row=2, column=0, sticky=tk.EW, pady=(SPACING_SM, 0))
         for col in range(4):
             prog_lf.columnconfigure(col, weight=1)
         self._program_checkbuttons: list[ttk.Checkbutton] = []
@@ -887,7 +1059,7 @@ class ProtocolApp(tk.Tk):
                 ),
                 variable=self._prog_vars[key],
             )
-            cb.grid(row=0, column=pi, sticky=tk.W, padx=(2, 6), pady=1)
+            cb.grid(row=0, column=pi, sticky=tk.W, padx=(1, 4), pady=0)
             self._program_checkbuttons.append(cb)
             tip = PROTOCOL_PROGRAM_UI_LABELS.get(key, "").strip()
             if tip:
@@ -904,8 +1076,8 @@ class ProtocolApp(tk.Tk):
             column=0,
             columnspan=4,
             sticky=tk.W,
-            padx=2,
-            pady=(4, 1),
+            padx=1,
+            pady=(2, 0),
         )
         _attach_tooltip(
             self.cb_technical_protocol,
@@ -917,7 +1089,7 @@ class ProtocolApp(tk.Tk):
         self.cb_tech_v_program = ttk.Combobox(
             prog_lf,
             state="readonly",
-            width=58,
+            width=36,
         )
         self._tech_v_pick_lbl_grid = dict(
             row=_tech_cb_row + 1,
@@ -929,6 +1101,7 @@ class ProtocolApp(tk.Tk):
         self._tech_v_pick_cb_grid = dict(
             row=_tech_cb_row + 1,
             column=1,
+            columnspan=3,
             sticky=tk.EW,
             padx=4,
             pady=(0, 4),
@@ -947,8 +1120,8 @@ class ProtocolApp(tk.Tk):
         self._tech_tpl_btns_grid = dict(
             row=_tech_tpl_row,
             column=0,
-            columnspan=2,
-            sticky=tk.W,
+            columnspan=4,
+            sticky=tk.EW,
             padx=4,
             pady=(0, 2),
         )
@@ -966,12 +1139,12 @@ class ProtocolApp(tk.Tk):
             prog_lf,
             text="",
             style="Hint.TLabel",
-            wraplength=520,
+            wraplength=340,
         )
         self._tech_tpl_lbl_main_grid = dict(
             row=_tech_tpl_row + 1,
             column=0,
-            columnspan=2,
+            columnspan=4,
             sticky=tk.W,
             padx=4,
             pady=(0, 4),
@@ -981,66 +1154,28 @@ class ProtocolApp(tk.Tk):
         self._tech_tpl_btns.grid_remove()
         self.lbl_technical_template_main.grid_remove()
 
-        ttk.Label(right_fr, text="Дата:").grid(row=3, column=0, sticky=tk.W, **g)
-        self.entry_date = ttk.Entry(right_fr, width=MAIN_FORM_ENTRY_CHARS, style="FieldDate.TEntry")
-        self.entry_date.grid(row=3, column=1, sticky=tk.EW, **g)
-        self.entry_date.insert(0, date.today().strftime("%d.%m.%Y"))
-        _attach_tooltip(
-            self.entry_date,
-            "Дата протокола. Формат ДД.ММ.ГГГГ или ДД.ММ.ГГ. Участвует в номере в бланке Word (номер-месяц-год).",
-        )
+        bottom_lf = ttk.Labelframe(lf, text="Сформировать и сохранить", padding=SPACING_SM)
+        bottom_lf.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=(SPACING, 0))
+        bottom_lf.columnconfigure(0, weight=2)
+        bottom_lf.columnconfigure(1, weight=2)
+        bottom_lf.columnconfigure(2, weight=1)
+        bottom_lf.columnconfigure(3, weight=1)
+        bottom_lf.columnconfigure(4, weight=1)
 
-        ttk.Label(right_fr, text="№ протокола:").grid(row=4, column=0, sticky=tk.W, **g)
-        self.entry_protocol_no = ttk.Entry(right_fr, width=MAIN_FORM_ENTRY_CHARS, style="Field.TEntry")
-        self.entry_protocol_no.grid(row=4, column=1, sticky=tk.EW, **g)
-        _saved_protocol_no = load_last_protocol_no()
-        if _saved_protocol_no:
-            self.entry_protocol_no.insert(0, _saved_protocol_no)
-        _attach_tooltip(
-            self.entry_protocol_no,
-            "В бланк Word подставляется строка вида «номер-месяц-год» по этому полю и полю «Дата» "
-            "(см. также «Переменные шаблона» в настройках).",
-        )
-
-        ttk.Label(right_fr, text="Оценка:").grid(row=5, column=0, sticky=tk.W, **g)
-        self.combo_grade = ttk.Combobox(
-            right_fr,
-            values=GRADE_OPTIONS,
-            state="readonly",
-            width=47,
-        )
-        self.combo_grade.grid(row=5, column=1, sticky=tk.EW, **g)
-        self.combo_grade.current(0)
-
-        ttk.Label(right_fr, text="Проверка знаний:").grid(row=6, column=0, sticky=tk.W, **g)
-        self.combo_check_type = ttk.Combobox(
-            right_fr,
-            values=CHECK_TYPE_OPTIONS,
-            state="readonly",
-            width=47,
-        )
-        self.combo_check_type.grid(row=6, column=1, sticky=tk.EW, **g)
-        self.combo_check_type.current(0)
-
-        actions = ttk.Labelframe(main, text="Действия", padding=8, style="Card.TLabelframe")
-        actions.grid(row=2, column=0, sticky=tk.EW, **g)
-        actions.columnconfigure(0, weight=2)
-        actions.columnconfigure(1, weight=2)
-        actions.columnconfigure(2, weight=1)
         self.btn_generate = ttk.Button(
-            actions,
+            bottom_lf,
             text="Сформировать протокол",
             command=self.generate_protocol,
             style="Accent.TButton",
         )
         self.btn_generate.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6), pady=(0, 4))
         ttk.Button(
-            actions,
+            bottom_lf,
             text="По одному на каждого → в папку…",
             command=self.generate_protocol_per_employee_to_folder,
         ).grid(row=0, column=1, sticky=tk.EW, padx=(0, 6), pady=(0, 4))
         self.btn_refresh_mintrud_registry = ttk.Button(
-            actions,
+            bottom_lf,
             text="Обновить из реестра Минтруд",
             command=self.regenerate_protocol_with_mintrud_registry,
             style="Small.TButton",
@@ -1052,42 +1187,36 @@ class ProtocolApp(tk.Tk):
             "(«Минтруд» → «Файл реестра обученных»). Те же ФИО, программы и дата, что на экране.",
         )
 
-        export_lf = ttk.Labelframe(main, text="Экспорт", padding=8, style="Card.TLabelframe")
-        export_lf.grid(row=3, column=0, sticky=tk.EW, **g)
-        export_lf.columnconfigure(0, weight=1)
-        export_lf.columnconfigure(1, weight=1)
-        export_lf.columnconfigure(2, weight=1)
-
         self.btn_save = ttk.Button(
-            export_lf,
+            bottom_lf,
             text="Сохранить DOCX",
             command=self.save_to_docx,
             state="disabled",
         )
-        self.btn_save.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6))
+        self.btn_save.grid(row=1, column=0, sticky=tk.EW, padx=(0, 6))
 
         self.btn_save_pdf = ttk.Button(
-            export_lf,
+            bottom_lf,
             text="Сохранить PDF",
             command=self.save_to_pdf,
             state="disabled",
         )
-        self.btn_save_pdf.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6))
+        self.btn_save_pdf.grid(row=1, column=1, sticky=tk.EW, padx=(0, 6))
 
         self.btn_preview = ttk.Button(
-            export_lf,
+            bottom_lf,
             text="Предпросмотр…",
             command=self._open_preview_window_manual,
             state="disabled",
         )
-        self.btn_preview.grid(row=0, column=2, sticky=tk.EW)
+        self.btn_preview.grid(row=1, column=2, sticky=tk.EW)
         _attach_tooltip(
             self.btn_preview,
             "Открыть окно с текстом последнего сформированного протокола (то же, что после «Сформировать»).",
         )
 
         status_fr = ttk.Frame(main)
-        status_fr.grid(row=4, column=0, sticky=tk.EW, **g)
+        status_fr.grid(row=2, column=0, sticky=tk.EW, **g)
         status_fr.columnconfigure(0, weight=1)
         ttk.Separator(status_fr, orient=tk.HORIZONTAL).grid(row=0, column=0, sticky=tk.EW, pady=(0, 6))
         ttk.Label(
@@ -1120,8 +1249,7 @@ class ProtocolApp(tk.Tk):
                 pass
             self._preview_win = None
 
-        win = tk.Toplevel(self)
-        self._apply_embedded_window_icon(win)
+        win = self._themed_toplevel()
         self._preview_win = win
         win.title("Предпросмотр протокола")
         win.transient(self)
@@ -1155,15 +1283,14 @@ class ProtocolApp(tk.Tk):
         )
         def _on_close() -> None:
             try:
-                win.destroy()
+                self._close_modal_window(win)
             finally:
                 self._preview_win = None
 
         ttk.Button(bf, text="Закрыть", command=_on_close).pack(side=tk.RIGHT)
 
         win.protocol("WM_DELETE_WINDOW", _on_close)
-        win.lift()
-        win.focus_force()
+        self._make_modal(win, parent=self._dialog_parent())
         self._register_clipboard_for_window(win)
 
     def _set_protocol_preview(
@@ -1186,8 +1313,7 @@ class ProtocolApp(tk.Tk):
             self.after(80, self._show_preview_toplevel)
 
     def _setup_admin_window(self) -> None:
-        win = tk.Toplevel(self)
-        self._apply_embedded_window_icon(win)
+        win = self._themed_toplevel()
         win.title("Администрирование — настройки и данные")
         win.withdraw()
         win.transient(self)
@@ -1204,19 +1330,41 @@ class ProtocolApp(tk.Tk):
         self._refresh_programs_file_label()
         self._refresh_technical_template_labels()
         self._admin_win.deiconify()
-        self._fit_window_geometry(self._admin_win, margin_x=32, margin_y=56, min_w=480, min_h=360)
-        self._admin_win.lift()
-        self._admin_win.focus_force()
+        self._fit_window_geometry(self._admin_win, margin_x=32, margin_y=56, min_w=520, min_h=420)
+        self._make_modal(self._admin_win)
 
     def _close_admin_window(self) -> None:
         if self._admin_win is not None:
+            self._release_modal(self._admin_win)
             self._admin_win.withdraw()
+
+    def _apply_ui_color_scheme(self) -> None:
+        sid = self._ui_scheme_var.get()
+        apply_color_scheme(sid, self)
+        label = SCHEME_LABELS.get(sid, sid)
+        self._status_var.set(f"Цветовая схема: {label} (сохранена)")
+        if hasattr(self, "cmb_ui_scheme"):
+            ids = getattr(self, "_ui_scheme_ids", [])
+            if sid in ids:
+                self.cmb_ui_scheme.current(ids.index(sid))
+        for win in (self._admin_win, self._commission_win):
+            if win is not None and self._visible_toplevel(win):
+                apply_theme_to_window(win)
+
+    def _apply_ui_color_scheme_from_admin(self) -> None:
+        if not hasattr(self, "cmb_ui_scheme"):
+            return
+        idx = self.cmb_ui_scheme.current()
+        ids = getattr(self, "_ui_scheme_ids", [])
+        if idx < 0 or idx >= len(ids):
+            return
+        self._ui_scheme_var.set(ids[idx])
+        self._apply_ui_color_scheme()
 
     def _open_commission_window(self) -> None:
         if self._commission_win is not None and self._commission_win.winfo_exists():
             self._commission_win.deiconify()
-            self._commission_win.lift()
-            self._commission_win.focus_force()
+            self._make_modal(self._commission_win)
             self._register_clipboard_for_window(self._commission_win)
             if self._commission_panel is not None:
                 refresh_commission_pool_from_excel(
@@ -1233,8 +1381,7 @@ class ProtocolApp(tk.Tk):
                     self._tech_commission_panel.load_from_db_into_ui()
             return
 
-        win = tk.Toplevel(self)
-        self._apply_embedded_window_icon(win)
+        win = self._themed_toplevel()
         win.title("Приказ и комиссия по проверке знаний")
         win.minsize(560, 640)
         win.transient(self)
@@ -1243,6 +1390,7 @@ class ProtocolApp(tk.Tk):
         def _on_close_commission() -> None:
             # Не обнулять ссылки на панели: окно только скрывается (withdraw), при повторном открытии
             # нужны те же CommissionAdminPanel для обновления списка komission и загрузки из БД.
+            self._release_modal(win)
             win.withdraw()
 
         win.protocol("WM_DELETE_WINDOW", _on_close_commission)
@@ -1291,8 +1439,7 @@ class ProtocolApp(tk.Tk):
         ttk.Button(bf, text="Закрыть", command=_on_close_commission).pack(side=tk.LEFT)
 
         win.deiconify()
-        win.lift()
-        win.focus_force()
+        self._make_modal(win)
         self._register_clipboard_for_window(win)
 
     def _export_recovery_templates_bundle(self) -> None:
@@ -1324,23 +1471,37 @@ class ProtocolApp(tk.Tk):
     def _build_admin_window_content(self, win: tk.Toplevel) -> None:
         g = {"padx": 5, "pady": 5}
         outer = ttk.Frame(win, padding=8)
-        outer.pack(fill=tk.X)
+        outer.pack(fill=tk.BOTH, expand=True)
         outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
 
-        lf_ex = ttk.Labelframe(outer, text="Файл данных (сотрудники)", padding=6)
+        nb = ttk.Notebook(outer)
+        nb.grid(row=0, column=0, sticky=tk.NSEW)
+
+        tab_data = ttk.Frame(nb, padding=4)
+        tab_tpl = ttk.Frame(nb, padding=4)
+        tab_more = ttk.Frame(nb, padding=4)
+        nb.add(tab_data, text="Файлы данных")
+        nb.add(tab_tpl, text="Шаблоны")
+        nb.add(tab_more, text="Прочее")
+        tab_data.columnconfigure(0, weight=1)
+        tab_tpl.columnconfigure(0, weight=1)
+        tab_more.columnconfigure(0, weight=1)
+
+        lf_ex = ttk.Labelframe(tab_data, text="Файл данных (сотрудники)", padding=6)
         lf_ex.grid(row=0, column=0, sticky=tk.EW, **g)
         eb = ttk.Frame(lf_ex)
         eb.grid(row=0, column=0, columnspan=3, sticky=tk.W)
-        ttk.Button(eb, text="Загрузить из Excel", command=self.reload_employees).grid(
+        ttk.Button(eb, text="Загрузить из Excel", command=self._reload_employees_from_admin).grid(
             row=0, column=0, sticky=tk.W, padx=(0, 6)
         )
         ttk.Button(eb, text="Файл сотрудников…", command=self.pick_employees_excel).grid(
             row=0, column=1, sticky=tk.W, padx=(0, 8)
         )
-        self.lbl_employees_file = ttk.Label(lf_ex, text="", wraplength=480)
+        self.lbl_employees_file = ttk.Label(lf_ex, text="", wraplength=520)
         self.lbl_employees_file.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(6, 0))
 
-        lf_prog = ttk.Labelframe(outer, text="Справочник программ обучения", padding=6)
+        lf_prog = ttk.Labelframe(tab_data, text="Справочник программ обучения", padding=6)
         lf_prog.grid(row=1, column=0, sticky=tk.EW, **g)
         pb = ttk.Frame(lf_prog)
         pb.grid(row=0, column=0, columnspan=3, sticky=tk.W)
@@ -1352,11 +1513,11 @@ class ProtocolApp(tk.Tk):
             text="Вынести листы из Data_base…",
             command=self._export_programs_workbook_from_combined,
         ).grid(row=0, column=1, sticky=tk.W, padx=(0, 8))
-        self.lbl_programs_file = ttk.Label(lf_prog, text="", wraplength=480)
+        self.lbl_programs_file = ttk.Label(lf_prog, text="", wraplength=520)
         self.lbl_programs_file.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(6, 0))
 
-        lf_tpl = ttk.Labelframe(outer, text="Шаблон протокола", padding=6)
-        lf_tpl.grid(row=2, column=0, sticky=tk.EW, **g)
+        lf_tpl = ttk.Labelframe(tab_tpl, text="Шаблон протокола", padding=6)
+        lf_tpl.grid(row=0, column=0, sticky=tk.EW, **g)
         tr = ttk.Frame(lf_tpl)
         tr.grid(row=0, column=0, sticky=tk.W)
         ttk.Button(tr, text="Выбрать шаблон", command=self.pick_template).grid(
@@ -1416,11 +1577,11 @@ class ProtocolApp(tk.Tk):
         self.lbl_technical_template_admin.grid(row=4, column=0, sticky=tk.W, pady=(4, 0))
 
         lf_reg = ttk.Labelframe(
-            outer,
+            tab_more,
             text="Реестр обученных (выгрузка с сайта Минтруда)",
             padding=6,
         )
-        lf_reg.grid(row=3, column=0, sticky=tk.EW, **g)
+        lf_reg.grid(row=0, column=0, sticky=tk.EW, **g)
         reg_bt = ttk.Frame(lf_reg)
         reg_bt.grid(row=0, column=0, columnspan=2, sticky=tk.W)
         ttk.Button(
@@ -1437,23 +1598,57 @@ class ProtocolApp(tk.Tk):
         self.lbl_mintrud_registry.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
         self._refresh_mintrud_registry_label()
 
-        lf_more = ttk.Labelframe(outer, text="Дополнительно при заполнении", padding=6)
-        lf_more.grid(row=4, column=0, sticky=tk.EW, **g)
+        lf_more = ttk.Labelframe(tab_more, text="Дополнительно при заполнении", padding=6)
+        lf_more.grid(row=1, column=0, sticky=tk.EW, **g)
         lf_more.columnconfigure(1, weight=1)
         ttk.Label(
             lf_more,
             text="Регистрационный номер (вручную, если нет в файле реестра):",
         ).grid(row=0, column=0, sticky=tk.NW, **g)
-        self.entry_registry_no = ttk.Entry(lf_more, width=55)
+        self.entry_registry_no = ttk.Entry(lf_more, width=55, style=FIELD_STYLE)
         self.entry_registry_no.grid(row=0, column=1, sticky=tk.EW, **g)
         ttk.Label(lf_more, text="Доп. тема / строка для .txt:").grid(
             row=1, column=0, sticky=tk.W, **g
         )
-        self.entry_theme = ttk.Entry(lf_more, width=55)
+        self.entry_theme = ttk.Entry(lf_more, width=55, style=FIELD_STYLE)
         self.entry_theme.grid(row=1, column=1, sticky=tk.EW, **g)
 
-        jf = ttk.Frame(outer)
-        jf.grid(row=5, column=0, sticky=tk.W, **g)
+        lf_ui = ttk.Labelframe(tab_more, text="Оформление интерфейса", padding=6)
+        lf_ui.grid(row=2, column=0, sticky=tk.EW, **g)
+        lf_ui.columnconfigure(1, weight=1)
+        ttk.Label(lf_ui, text="Цветовая схема:").grid(row=0, column=0, sticky=tk.W, **g)
+        self._ui_scheme_ids = [sid for sid, _lbl in color_scheme_choices()]
+        scheme_labels = [lbl for _sid, lbl in color_scheme_choices()]
+        self.cmb_ui_scheme = ttk.Combobox(
+            lf_ui,
+            values=scheme_labels,
+            state="readonly",
+            width=44,
+            style=FIELD_COMBO_STYLE,
+        )
+        self.cmb_ui_scheme.grid(row=0, column=1, sticky=tk.EW, **g)
+        cur = current_color_scheme_id()
+        if cur in self._ui_scheme_ids:
+            self.cmb_ui_scheme.current(self._ui_scheme_ids.index(cur))
+        self.cmb_ui_scheme.bind("<<ComboboxSelected>>", lambda _e: self._apply_ui_color_scheme_from_admin())
+        ui_btns = ttk.Frame(lf_ui)
+        ui_btns.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(8, 0))
+        ttk.Button(
+            ui_btns,
+            text="Применить схему",
+            command=self._apply_ui_color_scheme_from_admin,
+            style="Accent.TButton",
+        ).grid(row=0, column=0, sticky=tk.W, padx=(0, 8))
+        ttk.Label(
+            lf_ui,
+            text="Кнопки получают фон и рамку; основные действия — синяя кнопка. "
+            "Тот же выбор — меню «Вид» → «Цветовая схема».",
+            wraplength=520,
+            style="Hint.TLabel",
+        ).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(8, 0))
+
+        jf = ttk.Labelframe(tab_more, text="Журналы протоколов", padding=6)
+        jf.grid(row=3, column=0, sticky=tk.W, **g)
         ttk.Button(
             jf,
             text="Журнал (охрана труда)…",
@@ -1727,6 +1922,8 @@ class ProtocolApp(tk.Tk):
             self.lbl_technical_template_main.configure(text=cap)
         if hasattr(self, "lbl_technical_template_admin"):
             self.lbl_technical_template_admin.configure(text=cap)
+        if self.var_technical_protocol.get():
+            self.after_idle(self._fit_main_window_to_form)
 
     def pick_technical_template(self) -> None:
         path = filedialog.askopenfilename(
@@ -1750,8 +1947,7 @@ class ProtocolApp(tk.Tk):
         self._refresh_technical_template_labels()
 
     def show_template_variables_help(self) -> None:
-        win = tk.Toplevel(self)
-        self._apply_embedded_window_icon(win)
+        win = self._themed_toplevel()
         win.title("Переменные и маркеры шаблона протокола")
         win.minsize(560, 420)
         frm = ttk.Frame(win, padding=8)
@@ -1766,9 +1962,10 @@ class ProtocolApp(tk.Tk):
         sb.grid(row=0, column=1, sticky=tk.NS)
         box.insert("1.0", PROTOCOL_TEMPLATE_VARIABLES_DOC)
         box.configure(state=tk.DISABLED)
-        ttk.Button(frm, text="Закрыть", command=win.destroy).grid(
+        ttk.Button(frm, text="Закрыть", command=lambda: self._close_modal_window(win)).grid(
             row=1, column=0, columnspan=2, pady=(10, 0)
         )
+        self._make_modal(win, parent=self._dialog_parent())
 
     def clear_protocol_database(self) -> None:
         """Удаление всех записей журналов protocols (ОТ и тех.) с подтверждением."""
@@ -1794,8 +1991,8 @@ class ProtocolApp(tk.Tk):
             messagebox.showerror("База данных", str(e))
             return
 
-        win = tk.Toplevel(self)
-        self._apply_embedded_window_icon(win)
+        win = self._themed_toplevel()
+        modal_parent = self._dialog_parent()
         jtitle = (
             "Журнал технических протоколов"
             if kind == PROTOCOL_JOURNAL_KIND_TECH
@@ -1990,7 +2187,9 @@ class ProtocolApp(tk.Tk):
         ttk.Button(btn_bar, text="Очистить журнал…", command=on_clear_journal).grid(
             row=0, column=3, padx=(0, 8)
         )
-        ttk.Button(btn_bar, text="Закрыть", command=win.destroy).grid(row=0, column=4)
+        ttk.Button(btn_bar, text="Закрыть", command=lambda: self._close_modal_window(win, parent=modal_parent)).grid(
+            row=0, column=4
+        )
 
         lb.bind("<<ListboxSelect>>", on_select)
         for r in rows:
@@ -1998,11 +2197,11 @@ class ProtocolApp(tk.Tk):
         if rows:
             lb.selection_set(0)
             on_select()
+        self._make_modal(win, parent=modal_parent)
 
     def _open_mintrud_employer_window(self) -> None:
         """Реквизиты работодателя и организации 2 для шаблона выгрузки Минтруда (protocols.db)."""
-        win = tk.Toplevel(self)
-        self._apply_embedded_window_icon(win)
+        win = self._themed_toplevel()
         win.title("Минтруд — реквизиты для шаблона")
         win.minsize(440, 340)
         win.resizable(True, False)
@@ -2027,12 +2226,12 @@ class ProtocolApp(tk.Tk):
         lf.columnconfigure(1, weight=1)
 
         ttk.Label(lf, text="ИНН работодателя:").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4)
-        ent_inn = ttk.Entry(lf, width=48)
+        ent_inn = ttk.Entry(lf, width=48, style=FIELD_STYLE)
         ent_inn.grid(row=0, column=1, sticky=tk.EW, pady=4)
         ent_inn.insert(0, inn0)
 
         ttk.Label(lf, text="Название работодателя:").grid(row=1, column=0, sticky=tk.NW, padx=(0, 8), pady=4)
-        ent_name = ttk.Entry(lf, width=48)
+        ent_name = ttk.Entry(lf, width=48, style=FIELD_STYLE)
         ent_name.grid(row=1, column=1, sticky=tk.EW, pady=4)
         ent_name.insert(0, name0)
 
@@ -2045,14 +2244,14 @@ class ProtocolApp(tk.Tk):
         lf2.columnconfigure(1, weight=1)
 
         ttk.Label(lf2, text="ИНН организации 2:").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=4)
-        ent_inn2 = ttk.Entry(lf2, width=48)
+        ent_inn2 = ttk.Entry(lf2, width=48, style=FIELD_STYLE)
         ent_inn2.grid(row=0, column=1, sticky=tk.EW, pady=4)
         ent_inn2.insert(0, inn2_0)
 
         ttk.Label(lf2, text="Наименование организации 2:").grid(
             row=1, column=0, sticky=tk.NW, padx=(0, 8), pady=4
         )
-        ent_org2 = ttk.Entry(lf2, width=48)
+        ent_org2 = ttk.Entry(lf2, width=48, style=FIELD_STYLE)
         ent_org2.grid(row=1, column=1, sticky=tk.EW, pady=4)
         ent_org2.insert(0, org2_0)
 
@@ -2079,8 +2278,9 @@ class ProtocolApp(tk.Tk):
         bf = ttk.Frame(outer)
         bf.grid(row=3, column=0, sticky=tk.E)
         ttk.Button(bf, text="Сохранить", command=do_save).grid(row=0, column=0, padx=(0, 8))
-        ttk.Button(bf, text="Закрыть", command=win.destroy).grid(row=0, column=1)
+        ttk.Button(bf, text="Закрыть", command=lambda: self._close_modal_window(win)).grid(row=0, column=1)
         self._register_clipboard_for_window(win)
+        self._make_modal(win)
 
     def _open_mintrud_export_window(self) -> None:
         """История журнала: выбор одной или нескольких записей, выгрузка шаблона Excel для реестра Минтруда."""
@@ -2090,8 +2290,7 @@ class ProtocolApp(tk.Tk):
             messagebox.showerror("База данных", str(e))
             return
 
-        win = tk.Toplevel(self)
-        self._apply_embedded_window_icon(win)
+        win = self._themed_toplevel()
         win.title("Шаблон для сайта Минтруда — выбор из журнала протоколов")
         win.minsize(760, 520)
         win.geometry("920x580")
@@ -2174,7 +2373,7 @@ class ProtocolApp(tk.Tk):
             lb.selection_clear(0, tk.END)
 
         def show_mintrud_help() -> None:
-            hw = tk.Toplevel(win)
+            hw = self._themed_toplevel(win)
             self._apply_embedded_window_icon(hw)
             hw.title("Справка: выгрузка для Минтруда")
             hw.minsize(520, 360)
@@ -2287,16 +2486,18 @@ class ProtocolApp(tk.Tk):
         ttk.Button(btn_bar, text="Справка…", command=show_mintrud_help).grid(
             row=0, column=4, padx=(0, 6)
         )
-        ttk.Button(btn_bar, text="Закрыть", command=win.destroy).grid(row=0, column=5)
+        ttk.Button(btn_bar, text="Закрыть", command=lambda: self._close_modal_window(win)).grid(row=0, column=5)
 
         if rows:
             for r in rows:
                 lb.insert(tk.END, format_journal_list_line(r))
         else:
             lbl_empty.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
+        self._make_modal(win)
 
     def pick_template(self) -> None:
         path = filedialog.askopenfilename(
+            parent=self._dialog_parent(),
             title="Выберите шаблон протокола",
             filetypes=[
                 ("Текст UTF-8", "*.txt"),
@@ -2332,7 +2533,9 @@ class ProtocolApp(tk.Tk):
         self.lbl_employees_file.configure(text=f"{src}: {p.name}{extra}")
 
     def pick_employees_excel(self) -> None:
+        par = self._dialog_parent()
         path = filedialog.askopenfilename(
+            parent=par,
             title="Файл с базой сотрудников",
             filetypes=[
                 ("Excel", "*.xlsx"),
@@ -2344,7 +2547,14 @@ class ProtocolApp(tk.Tk):
             return
         self.employees_excel_path = Path(path).expanduser().resolve()
         self._refresh_employees_file_label()
-        self.reload_employees(show_errors=True)
+        self.reload_employees(show_errors=True, notify_success=True, parent=par)
+
+    def _reload_employees_from_admin(self) -> None:
+        self.reload_employees(
+            show_errors=True,
+            notify_success=True,
+            parent=self._admin_win or self,
+        )
 
     def _refresh_programs_file_label(self) -> None:
         if not hasattr(self, "lbl_programs_file"):
@@ -2435,7 +2645,14 @@ class ProtocolApp(tk.Tk):
             "(Data_base / Programs_base).",
         )
 
-    def reload_employees(self, *, show_errors: bool = False) -> None:
+    def reload_employees(
+        self,
+        *,
+        show_errors: bool = False,
+        notify_success: bool = False,
+        parent: tk.Misc | None = None,
+    ) -> None:
+        par = parent if parent is not None else self._dialog_parent()
         path = self._employees_file_resolved()
         try:
             self._employee_records = load_employees_from_excel(path)
@@ -2446,8 +2663,10 @@ class ProtocolApp(tk.Tk):
             self.list_employees.delete(0, tk.END)
             self._refresh_employees_file_label()
             if show_errors:
-                messagebox.showerror("Сотрудники Excel", str(e))
-            self._status_var.set(f"Ошибка загрузки сотрудников ({path.name}). Откройте «Настройки» и проверьте файл.")
+                messagebox.showerror("Сотрудники Excel", str(e), parent=par)
+            self._status_var.set(
+                f"Ошибка загрузки сотрудников ({path.name}). Откройте «Настройки» и проверьте файл."
+            )
             return
         sort_employees_by_subdivision_then_fio(self._employee_records)
         self._rebuild_employee_search_blobs()
@@ -2457,10 +2676,25 @@ class ProtocolApp(tk.Tk):
             self._commission_state,
             self._employees_file_resolved(),
             show_errors=False,
-            parent=self,
+            parent=par,
         )
         self._sync_and_refresh_commission_pool_listboxes()
         save_employees_cache(path, self._employee_records)
+        if notify_success:
+            n = len(self._employee_records)
+            if n:
+                messagebox.showinfo(
+                    "Сотрудники Excel",
+                    f"Загружено записей: {n}\n{path}",
+                    parent=par,
+                )
+            else:
+                messagebox.showwarning(
+                    "Сотрудники Excel",
+                    f"Файл прочитан, но записей не найдено.\n{path}\n\n"
+                    "Проверьте лист сотрудников и строку заголовков (ФИО, должность).",
+                    parent=par,
+                )
 
     def _rebuild_employee_search_blobs(self) -> None:
         """Один раз на загрузку: нижний регистр для быстрого поиска по списку."""
@@ -2831,6 +3065,7 @@ class ProtocolApp(tk.Tk):
             self.cb_tech_v_program.grid(**self._tech_v_pick_cb_grid)
             self._tech_tpl_btns.grid(**self._tech_tpl_btns_grid)
             self.lbl_technical_template_main.grid(**self._tech_tpl_lbl_main_grid)
+            self.list_employees.configure(height=EMPLOYEE_LIST_HEIGHT_TECH)
             self._refresh_tech_v_program_combo(silent=False)
         else:
             for cb in self._program_checkbuttons:
@@ -2840,9 +3075,11 @@ class ProtocolApp(tk.Tk):
             self._tech_tpl_btns.grid_remove()
             self.lbl_technical_template_main.grid_remove()
             self._tech_v_programs_list = []
+            self.list_employees.configure(height=EMPLOYEE_LIST_HEIGHT_NORMAL)
         if hasattr(self, "lbl_template"):
             self.lbl_template.configure(text=self._template_status_text())
         self._refresh_technical_template_labels()
+        self.after_idle(self._fit_main_window_to_form)
 
     def _refresh_tech_v_program_combo(self, *, silent: bool = False) -> None:
         if not self.var_technical_protocol.get():
@@ -2893,7 +3130,6 @@ class ProtocolApp(tk.Tk):
     def _resolve_program_keys_and_tech_extra(
         self, persons_raw: list[EmployeeRecord]
     ) -> tuple[list[str], list[str], dict[str, Any]]:
-        programs_path = self._programs_file_resolved()
         if self.var_technical_protocol.get():
             tinfo = self._get_selected_tech_v_program()
             if tinfo is None:

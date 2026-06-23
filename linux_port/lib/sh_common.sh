@@ -29,18 +29,64 @@ python_short_version() {
 
 has_libpython_for() {
   local py="${1:-python3}"
-  local ver
+  local probe_dir ver header
+  probe_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -f "$probe_dir/libpython_probe.py" ]] && "$py" "$probe_dir/libpython_probe.py" 2>/dev/null; then
+    return 0
+  fi
   ver="$(python_short_version "$py" 2>/dev/null || echo 3)"
+  header="/usr/include/python${ver}/Python.h"
+  if [[ -f "$header" ]] && ldconfig -p 2>/dev/null | grep -qE "libpython${ver//./\\.}"; then
+    return 0
+  fi
+  if [[ -f "$header" ]] && find /usr/lib64 /usr/lib -name "libpython${ver}*.so*" 2>/dev/null | grep -q .; then
+    return 0
+  fi
   if ldconfig -p 2>/dev/null | grep -qE "libpython${ver//./\\.}.*\\.so"; then
     return 0
   fi
   if find /usr/lib64 /usr/lib -name "libpython${ver}*.so*" 2>/dev/null | grep -q .; then
     return 0
   fi
-  if find /usr/lib64 /usr/lib -name 'libpython3*.so*' 2>/dev/null | grep -q .; then
-    return 0
-  fi
   return 1
+}
+
+libpython_install_hint() {
+  if is_altlinux; then
+    echo "ALT Linux: sudo apt-get install -y libpython3.11 python3.11-dev"
+    echo "(пакета python3.11-devel на ALT нет — нужен python3.11-dev)"
+    echo "Или: ./install_deps.sh"
+  else
+    echo "Debian/Ubuntu: sudo apt-get install -y python3-dev python3.11-dev"
+    echo "Или: ./install_deps.sh"
+  fi
+}
+
+# Заголовки Python для сборки на ALT (p10: python3.11-dev, не python3.11-devel).
+alt_python_dev_package() {
+  local pkg
+  for pkg in python3.11-dev python3-dev; do
+    if apt-cache show "$pkg" >/dev/null 2>&1; then
+      echo "$pkg"
+      return 0
+    fi
+  done
+  echo python3.11-dev
+  return 1
+}
+
+# Установить первый доступный пакет из списка имён (ALT/Debian различаются).
+apt_install_any() {
+  local pkg
+  for pkg in "$@"; do
+    if apt-cache show "$pkg" >/dev/null 2>&1; then
+      echo "  + $pkg"
+      sudo apt-get install -y "$pkg"
+      return 0
+    fi
+  done
+  echo "  пропуск (нет в репозитории): $*" >&2
+  return 0
 }
 
 install_system_packages() {
@@ -50,30 +96,32 @@ install_system_packages() {
   fi
   sudo apt-get update
   if is_altlinux; then
-    echo "Системные пакеты (ALT Linux)..."
+    local py_dev
+    py_dev="$(alt_python_dev_package || echo python3.11-dev)"
+    echo "Системные пакеты (ALT Linux, dev: $py_dev)..."
     sudo apt-get install -y \
       python3.11 \
       python3.11-tools \
       python3-module-pip \
       libpython3.11 \
-      python3.11-devel \
+      "$py_dev" \
       python3-modules-tkinter \
-      binutils \
-      xvfb \
-      libreoffice \
-      fonts-dejavu \
-      fonts-ttf-dejavu
+      binutils
+    echo "Опционально (PDF/шрифты, сборка без них возможна)..."
+    apt_install_any xorg-xvfb xvfb
+    apt_install_any libreoffice libreoffice-writer
+    apt_install_any fonts-dejavu fonts-ttf-dejavu fonts-dejavu-core
   else
     echo "Системные пакеты (Debian/Ubuntu)..."
     sudo apt-get install -y \
       python3-tk \
       python3-venv \
       python3-dev \
-      binutils \
-      xvfb \
-      libreoffice-writer \
-      fonts-dejavu-core \
-      fonts-liberation
+      binutils
+    echo "Опционально (PDF/шрифты)..."
+    apt_install_any xvfb
+    apt_install_any libreoffice-writer libreoffice
+    apt_install_any fonts-dejavu-core fonts-liberation fonts-dejavu
   fi
 }
 
