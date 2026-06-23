@@ -24,6 +24,9 @@ class TestLinuxSyncPaths(unittest.TestCase):
     def test_commission_admin_affects_linux(self) -> None:
         self.assertTrue(path_affects_linux_app("commission_admin.py"))
 
+    def test_bundle_integration_affects_linux(self) -> None:
+        self.assertTrue(path_affects_linux_app("bundle_integration.py"))
+
     def test_overlay_affects_linux(self) -> None:
         self.assertTrue(path_affects_linux_app("linux_port/overlays/protocol_output.py"))
 

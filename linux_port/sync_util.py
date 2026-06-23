@@ -17,6 +17,7 @@ COPY_DIRS = (
 COPY_ROOT_FILES = (
     "main.py",
     "app_paths.py",
+    "bundle_integration.py",
     "clipboard_ui.py",
     "commission_admin.py",
     "docx_template_protection.py",
