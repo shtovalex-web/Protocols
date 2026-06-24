@@ -38,6 +38,14 @@ def main() -> int:
         print(f"FAIL: нет файла обновления: {payload}")
         return 1
 
+    payload_size = payload.stat().st_size
+    if payload_size != manifest.windows.size:
+        print(
+            f"FAIL: размер {payload} ({payload_size}) != manifest.json ({manifest.windows.size})"
+        )
+        print("Исправление: py -3 tools/publish_update_manifest.py --exe ... --share-root D:\\Обновление")
+        return 1
+
     if not is_newer_version(manifest.latest_version, current):
         print("FAIL: манифест не новее текущей версии — обновление не предложится")
         return 1

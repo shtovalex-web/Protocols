@@ -36,7 +36,11 @@ def stage_payload_copy(
         raise UpdateInstallerError(msg)
     actual_size = source.stat().st_size
     if actual_size != expected_size:
-        msg = f"Update file size mismatch: {actual_size} != {expected_size}"
+        msg = (
+            f"Размер файла обновления не совпадает с manifest.json: "
+            f"{actual_size} != {expected_size}. "
+            f"Пересоберите и опубликуйте обновление: tools/publish_update_manifest.py"
+        )
         raise UpdateInstallerError(msg)
 
     destination.parent.mkdir(parents=True, exist_ok=True)

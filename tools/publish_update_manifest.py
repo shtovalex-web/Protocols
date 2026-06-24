@@ -57,6 +57,7 @@ def publish(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    print(f"Payload: {target_exe} ({size} bytes, sha256={digest[:16]}...)")
     return manifest_path
 
 
