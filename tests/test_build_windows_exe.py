@@ -56,6 +56,29 @@ class TestBuildWindowsExeBundle(unittest.TestCase):
             self.assertTrue(config_path.is_file())
             self.assertFalse(mod._ensure_update_config(out))
 
+    def test_local_update_share_dir(self):
+        mod = _load_build_module()
+        self.assertEqual(mod.LOCAL_UPDATE_SHARE_DIR, mod.ROOT / "UPDATE")
+
+    def test_publish_local_update_share_writes_manifest(self):
+        mod = _load_build_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "ProtocolOOT.exe"
+            exe.write_bytes(b"exe-payload")
+            data_dir = root / "data"
+            data_dir.mkdir()
+            (data_dir / "FAQ.txt").write_text("faq", encoding="utf-8")
+            update_dir = root / "UPDATE"
+            original = mod.LOCAL_UPDATE_SHARE_DIR
+            try:
+                mod.LOCAL_UPDATE_SHARE_DIR = update_dir
+                manifest_path = mod._publish_local_update_share(exe=exe, data_dir=data_dir)
+            finally:
+                mod.LOCAL_UPDATE_SHARE_DIR = original
+            self.assertTrue(manifest_path.is_file())
+            self.assertTrue((update_dir / "windows").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

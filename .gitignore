@@ -43,6 +43,7 @@ _pyinstaller_build/
 _pyinstaller_build_onefile/
 ProtocolOHT_app/
 ProtocolOHT_onefile/
+UPDATE/
 ProtocolOOT.spec
 ProtocolOOT_linux_build_test_tmp/
 

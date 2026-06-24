@@ -121,7 +121,11 @@ py -3 tools/scan_update_share.py
 
 `scan_update_share.py` — список всех версий на шаре и рекомендуемое обновление.
 
-Публикация тестового обновления:
+При **`py -3 build_windows_exe.py`** (сборка в `ProtocolOHT_onefile/`) комплект обновления автоматически
+публикуется в **`UPDATE/`** в корне проекта (`UPDATE/windows/<версия>/…`). Для onefile `update_config.json`
+при первой сборке указывает на `UPDATE/`.
+
+Публикация тестового обновления вручную:
 
 ```text
 py -3 tools/publish_update_manifest.py ^
