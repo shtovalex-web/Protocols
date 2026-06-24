@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8
 """Публикация manifest.json и копии .exe на сетевую шару."""
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _NEXT = ROOT / "ProtocolOHT_next"
 sys.path.insert(0, str(_NEXT))
 
+from update_bundle_files import DATA_REPLACE_FILENAMES, build_data_manifest_entries  # noqa: E402
 from update_manifest import sha256_file  # noqa: E402
 
 
@@ -29,6 +30,7 @@ def publish(
     changes: list[str],
     mandatory: bool,
     released: str,
+    data_src_dir: Path | None,
 ) -> Path:
     if not exe_path.is_file():
         msg = f"EXE not found: {exe_path}"
@@ -41,6 +43,20 @@ def publish(
 
     digest = sha256_file(target_exe)
     size = target_exe.stat().st_size
+
+    data_dir = (data_src_dir or exe_path.parent / "data").expanduser().resolve()
+    target_data = target_dir / "data"
+    copied_data = 0
+    for name in DATA_REPLACE_FILENAMES:
+        src = data_dir / name
+        if not src.is_file():
+            continue
+        target_data.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, target_data / name)
+        copied_data += 1
+
+    data_entries = build_data_manifest_entries(data_src_dir=data_dir, version=version)
+
     manifest = {
         "latest_version": version,
         "released": released,
@@ -51,6 +67,7 @@ def publish(
             "size": size,
         },
         "changes_short": changes,
+        "data_files": data_entries,
     }
     manifest_path = share_root / "manifest.json"
     manifest_path.write_text(
@@ -58,6 +75,7 @@ def publish(
         encoding="utf-8",
     )
     print(f"Payload: {target_exe} ({size} bytes, sha256={digest[:16]}...)")
+    print(f"Data files: {copied_data} in {target_data}")
     return manifest_path
 
 
@@ -70,6 +88,12 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         required=True,
         help=r"Корень шары, напр. \\SERVER\SOFT\ProtocolOOT",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Каталог data/ для публикации (по умолчанию — data/ рядом с exe)",
     )
     parser.add_argument(
         "--change",
@@ -93,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         changes=[str(c) for c in args.changes if str(c).strip()],
         mandatory=bool(args.mandatory),
         released=str(args.released).strip(),
+        data_src_dir=args.data_dir.expanduser().resolve() if args.data_dir else None,
     )
     print(f"Manifest: {manifest_path}")
     return 0

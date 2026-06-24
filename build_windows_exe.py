@@ -87,6 +87,8 @@ _PYI_HIDDEN = [
     "update_manifest",
     "update_installer",
     "update_scan",
+    "update_bundle_files",
+    "update_data_installer",
     "version_compare",
     "changelog_dialog",
 ]

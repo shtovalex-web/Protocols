@@ -12,6 +12,7 @@ from tkinter import messagebox
 from changelog_dialog import show_changelog_dialog
 from protocol_app_info import APP_VERSION
 from update_config import ENV_FORCE_CHECK, load_update_config
+from update_data_installer import apply_data_updates
 from update_installer import (
     UpdateInstallerError,
     cleanup_backup_exe,
@@ -92,6 +93,9 @@ def _ask_install_update(
         lines.append("")
         lines.extend(f"• {item}" for item in changes)
     lines.append("")
+    lines.append("Будут обновлены программа и файлы в папке data/ (шаблоны, справка).")
+    lines.append("Файлы в корне папки (базы, protocols.db) не изменяются.")
+    lines.append("")
     lines.append("Установить обновление сейчас?")
     text = "\n".join(lines)
     if mandatory:
@@ -107,6 +111,7 @@ def _perform_update(manifest_path: Path, manifest, exe_path: Path) -> None:
         expected_sha256=manifest.windows.sha256,
         expected_size=manifest.windows.size,
     )
+    apply_data_updates(manifest_path, manifest, exe_path)
     swap_exe_via_rename(exe_path)
     launch_updated_exe(
         exe_path,

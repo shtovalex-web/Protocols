@@ -119,7 +119,18 @@ py -3 tools/publish_update_manifest.py ^
 
 С версии 1.6.1 перезапуск после обновления идёт через `cmd start` (отдельный процесс), чтобы таких предупреждений было меньше.
 
-## Ограничения этапа 1
+## Этап 2 — обновление `data/`
 
-- Только **Windows .exe** (без zip-пакета и без обновления каталога `data/`).
-- Linux и обновление данных пользователя — следующие этапы.
+Вместе с exe обновляются файлы из **`data/`** (см. `update_bundle_files.py`):
+
+- `default_protocol.docx`, `default_protocol_tehnicheskiy.docx`
+- инструкции `.docx`, `FAQ.txt`, `ЖУРНАЛ_ДОРАБОТОК.md`
+- шаблоны Минтруд XSD (`.xlsx`), `icon.ico`
+
+**Не обновляются:** `protocols.db`, Excel в **корне**, `Protokol/`, `Mintrud/`, `update_config.json`.
+
+Перед заменой создаётся **`data.backup/`**. В `manifest.json` — секция **`data_files`**.
+
+## Ограничения
+
+- Только **Windows .exe** + **`data/`**; Linux — позже.

@@ -43,6 +43,36 @@ class TestUpdateManifest(unittest.TestCase):
                 root / "windows" / "1.6.0" / "ProtocolOOT.exe",
             )
 
+    def test_load_update_manifest_with_data_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "latest_version": "1.6.3",
+                        "windows": {
+                            "relative_path": "windows/1.6.3/ProtocolOOT.exe",
+                            "sha256": "ab" * 32,
+                            "size": 100,
+                        },
+                        "data_files": [
+                            {
+                                "relative_path": "windows/1.6.3/data/FAQ.txt",
+                                "sha256": "cd" * 32,
+                                "size": 50,
+                                "policy": "replace",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            manifest = load_update_manifest(manifest_path)
+            self.assertEqual(len(manifest.replace_data_files()), 1)
+            self.assertEqual(manifest.data_files[0].relative_path, "windows/1.6.3/data/FAQ.txt")
+
     def test_missing_manifest_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(UpdateManifestError):

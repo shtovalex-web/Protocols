@@ -1,13 +1,27 @@
 {
-  "latest_version": "1.6.0",
+  "latest_version": "1.6.3",
   "released": "2026-06-09",
   "mandatory": false,
   "windows": {
-    "relative_path": "windows/1.6.0/ProtocolOOT.exe",
+    "relative_path": "windows/1.6.3/ProtocolOOT.exe",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
     "size": 1
   },
   "changes_short": [
-    "Пример записи в журнале изменений"
+    "Обновление программы и комплекта data/"
+  ],
+  "data_files": [
+    {
+      "relative_path": "windows/1.6.3/data/default_protocol.docx",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 1,
+      "policy": "replace"
+    },
+    {
+      "relative_path": "windows/1.6.3/data/FAQ.txt",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 1,
+      "policy": "replace"
+    }
   ]
 }
