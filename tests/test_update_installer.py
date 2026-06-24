@@ -7,6 +7,7 @@ import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from _bootstrap import setup_main_project_paths
 
@@ -53,6 +54,17 @@ class TestUpdateInstaller(unittest.TestCase):
 
             cleanup_backup_exe(current)
             self.assertFalse(backup.exists())
+
+    def test_cleanup_backup_exe_ignores_permission_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            current = root / "app.exe"
+            backup = root / "app.exe.old"
+            backup.write_bytes(b"old")
+
+            with patch.object(Path, "unlink", side_effect=PermissionError("locked")):
+                self.assertFalse(cleanup_backup_exe(current))
+            self.assertTrue(backup.is_file())
 
 
 if __name__ == "__main__":

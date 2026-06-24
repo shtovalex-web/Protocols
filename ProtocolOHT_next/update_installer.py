@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from update_manifest import sha256_file
@@ -14,6 +15,23 @@ from update_manifest import sha256_file
 
 class UpdateInstallerError(Exception):
     """Ошибка установки обновления."""
+
+
+def _safe_unlink(path: Path) -> bool:
+    try:
+        path.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _unlink_with_retries(path: Path, *, attempts: int = 5, delay_sec: float = 0.25) -> bool:
+    for attempt in range(attempts):
+        if _safe_unlink(path):
+            return True
+        if attempt + 1 < attempts:
+            time.sleep(delay_sec)
+    return False
 
 
 def staged_new_exe_path(exe_path: Path) -> Path:
@@ -60,8 +78,12 @@ def swap_exe_via_rename(exe_path: Path) -> None:
         msg = f"Staged update not found: {new_path}"
         raise UpdateInstallerError(msg)
 
-    if old_path.exists():
-        old_path.unlink()
+    if old_path.exists() and not _safe_unlink(old_path):
+        stale = exe_path.with_name(f"{exe_path.stem}.old.{os.getpid()}{exe_path.suffix}")
+        try:
+            os.replace(old_path, stale)
+        except OSError:
+            pass
 
     os.replace(exe_path, old_path)
     try:
@@ -79,18 +101,31 @@ def swap_exe_via_rename(exe_path: Path) -> None:
         raise UpdateInstallerError(msg) from error
 
 
-def cleanup_backup_exe(exe_path: Path) -> None:
+def cleanup_backup_exe(exe_path: Path) -> bool:
+    """Удалить .exe.old после обновления; False — файл ещё занят (не критично)."""
     backup = backup_exe_path(exe_path)
-    if backup.is_file():
-        backup.unlink()
+    if not backup.is_file():
+        return True
+    return _unlink_with_retries(backup)
 
 
 def launch_updated_exe(exe_path: Path, *, show_changelog: bool, version: str) -> None:
     args = [str(exe_path)]
     if show_changelog:
         args.append(f"--show-changelog={version}")
-    subprocess.Popen(args, close_fds=True, cwd=str(exe_path.parent))
+    popen_kwargs: dict = {
+        "args": args,
+        "close_fds": True,
+        "cwd": str(exe_path.parent),
+    }
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = (
+            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+    subprocess.Popen(**popen_kwargs)
 
 
 def exit_for_update_restart() -> None:
+    if sys.platform == "win32":
+        time.sleep(0.4)
     sys.exit(0)
