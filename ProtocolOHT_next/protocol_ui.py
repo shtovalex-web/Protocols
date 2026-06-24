@@ -763,11 +763,20 @@ class ProtocolApp(tk.Tk):
             label="Журнал доработок…",
             command=lambda: open_changelog_window(self),
         )
+        help_m.add_command(
+            label="Проверить обновления…",
+            command=self._check_for_updates,
+        )
         help_m.add_separator()
         help_m.add_command(
             label="О программе…",
             command=self._show_about_window,
         )
+
+    def _check_for_updates(self) -> None:
+        from startup_update import check_updates_interactive
+
+        check_updates_interactive(parent=self)
 
     def _show_hotkeys_help(self) -> None:
         messagebox.showinfo(

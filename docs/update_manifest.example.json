@@ -1,0 +1,13 @@
+{
+  "latest_version": "1.6.0",
+  "released": "2026-06-09",
+  "mandatory": false,
+  "windows": {
+    "relative_path": "windows/1.6.0/ProtocolOOT.exe",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "size": 1
+  },
+  "changes_short": [
+    "Пример записи в журнале изменений"
+  ]
+}

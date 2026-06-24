@@ -26,6 +26,11 @@ from protocol_ui import ProtocolApp
 
 
 def main() -> None:
+    from startup_update import prepare_startup_updates
+
+    if not prepare_startup_updates(sys.argv):
+        return
+
     migrate_legacy_from_data_subfolder_to_exe()
     ensure_frozen_default_workbooks()
     install_app_error_logging()
