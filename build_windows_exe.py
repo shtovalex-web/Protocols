@@ -90,6 +90,18 @@ _PYI_HIDDEN = [
     "changelog_dialog",
 ]
 
+# fpdf2 тянет fontTools; на Python 3.14 iup — бинарный .pyd, без collect/hidden-import exe падает при старте.
+_PYI_COLLECT_SUBMODULES = ("openpyxl", "pymorphy2", "fontTools")
+_PYI_EXTRA_HIDDEN = (
+    "docx",
+    "docx.oxml",
+    "fpdf.fonts",
+    "fpdf.enums",
+    "fontTools",
+    "fontTools.varLib",
+    "fontTools.varLib.iup",
+)
+
 # Копируются в data/ рядом с exe (.md в поставку не включаются — только docx/xlsx/txt).
 BUNDLE_FILES = [
     "default_protocol.docx",
@@ -230,14 +242,10 @@ def main() -> int:
 
     for mod in _PYI_HIDDEN:
         args.append(f"--hidden-import={mod}")
-    args.extend(
-        [
-            "--hidden-import=docx",
-            "--hidden-import=docx.oxml",
-            "--collect-submodules=openpyxl",
-            "--collect-submodules=pymorphy2",
-        ]
-    )
+    for mod in _PYI_EXTRA_HIDDEN:
+        args.append(f"--hidden-import={mod}")
+    for pkg in _PYI_COLLECT_SUBMODULES:
+        args.append(f"--collect-submodules={pkg}")
     try:
         import pymorphy2_dicts_ru  # noqa: F401
     except ImportError:

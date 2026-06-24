@@ -28,6 +28,11 @@ class TestBuildWindowsExeBundle(unittest.TestCase):
         src = mod._bundle_src("ЖУРНАЛ_ДОРАБОТОК.md")
         self.assertTrue(src.is_file(), msg=f"Нет исходника {src}")
 
+    def test_pyinstaller_includes_fonttools_for_fpdf(self):
+        mod = _load_build_module()
+        self.assertIn("fontTools", mod._PYI_COLLECT_SUBMODULES)
+        self.assertIn("fontTools.varLib.iup", mod._PYI_EXTRA_HIDDEN)
+
 
 if __name__ == "__main__":
     unittest.main()
