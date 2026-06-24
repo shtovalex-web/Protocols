@@ -47,6 +47,15 @@ class TestBuildWindowsExeBundle(unittest.TestCase):
             self.assertTrue(mod._copy_bundle_asset(src, dst))
             self.assertEqual(dst.read_text(encoding="utf-8"), "hello")
 
+    def test_ensure_update_config_creates_only_when_missing(self):
+        mod = _load_build_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.assertTrue(mod._ensure_update_config(out))
+            config_path = out / "update_config.json"
+            self.assertTrue(config_path.is_file())
+            self.assertFalse(mod._ensure_update_config(out))
+
 
 if __name__ == "__main__":
     unittest.main()

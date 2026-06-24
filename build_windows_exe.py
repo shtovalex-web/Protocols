@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -135,6 +136,24 @@ def _copy_bundle_asset(src: Path, dst: Path) -> bool:
         return False
 
 
+def _ensure_update_config(out_dir: Path) -> bool:
+    """Создаёт update_config.json с путём по умолчанию; существующий файл не трогает."""
+    path = out_dir / "update_config.json"
+    if path.is_file():
+        return False
+    if str(NEXT) not in sys.path:
+        sys.path.insert(0, str(NEXT))
+    from update_config import DEFAULT_MANIFEST_PATH
+
+    payload = {
+        "manifest_path": str(DEFAULT_MANIFEST_PATH),
+        "enabled": True,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"  Создан {path.name} -> {DEFAULT_MANIFEST_PATH}")
+    return True
+
+
 def _pick_output_dir_interactive() -> Path | None:
     """Диалог выбора папки; None — пользователь отменил или tkinter недоступен."""
     try:
@@ -179,6 +198,10 @@ DIST_README = """Папка готовой сборки (onefile + компле�
 
 Переносите на другой ПК всю папку: exe + data/ целиком.
 В корне рядом с exe лежат копии Data_base.xlsx и Programs_base.xlsx (если были в исходниках при сборке).
+
+update_config.json — путь к manifest.json на шаре обновлений (создаётся при первой сборке,
+если файла ещё нет; существующий не перезаписывается). Без файла используется
+\\\\SERVER\\SOFT\\ProtocolOOT\\manifest.json из кода программы.
 
 Для PDF с оформлением Word на целевом ПК нужны Microsoft Word и регистрация COM (pywin32 входит в сборку exe).
 """
@@ -313,6 +336,7 @@ def main() -> int:
             )
 
     (OUT_DIR / "ИНСТРУКЦИЯ_папки_сборки.txt").write_text(DIST_README, encoding="utf-8")
+    _ensure_update_config(OUT_DIR)
 
     print()
     print("Сборка завершена.")
