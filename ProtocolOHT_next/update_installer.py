@@ -110,22 +110,25 @@ def cleanup_backup_exe(exe_path: Path) -> bool:
 
 
 def launch_updated_exe(exe_path: Path, *, show_changelog: bool, version: str) -> None:
-    args = [str(exe_path)]
+    args = [str(exe_path.resolve())]
     if show_changelog:
         args.append(f"--show-changelog={version}")
-    popen_kwargs: dict = {
-        "args": args,
-        "close_fds": True,
-        "cwd": str(exe_path.parent),
-    }
+    cwd = str(exe_path.parent)
     if sys.platform == "win32":
-        popen_kwargs["creationflags"] = (
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        # start через cmd — потомок не связан с onefile-родителем, меньше гонок с _MEI*.
+        launch_cmd = ["cmd", "/c", "start", "", *args]
+        subprocess.Popen(
+            launch_cmd,
+            cwd=cwd,
+            close_fds=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
-    subprocess.Popen(**popen_kwargs)
+        return
+    subprocess.Popen(args, close_fds=True, cwd=cwd)
 
 
 def exit_for_update_restart() -> None:
     if sys.platform == "win32":
-        time.sleep(0.4)
+        time.sleep(1.0)
+        os._exit(0)
     sys.exit(0)

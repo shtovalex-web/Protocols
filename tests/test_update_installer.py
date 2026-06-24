@@ -66,6 +66,22 @@ class TestUpdateInstaller(unittest.TestCase):
                 self.assertFalse(cleanup_backup_exe(current))
             self.assertTrue(backup.is_file())
 
+    def test_launch_updated_exe_uses_cmd_start_on_windows(self) -> None:
+        from update_installer import launch_updated_exe
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "ProtocolOOT.exe"
+            exe.write_bytes(b"exe")
+            with patch("update_installer.sys.platform", "win32"):
+                with patch("update_installer.subprocess.Popen") as popen:
+                    launch_updated_exe(exe, show_changelog=True, version="1.6.1")
+            popen.assert_called_once()
+            cmd = popen.call_args.args[0]
+            self.assertEqual(cmd[0:3], ["cmd", "/c", "start"])
+            self.assertIn(str(exe.resolve()), cmd)
+            self.assertIn("--show-changelog=1.6.1", cmd)
+
 
 if __name__ == "__main__":
     unittest.main()
