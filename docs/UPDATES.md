@@ -5,7 +5,7 @@
 ## Как это работает
 
 1. При старте `.exe` программа читает `manifest.json` и **сканирует вложенные каталоги** шары.
-2. Ищет `manifest.json` и `ProtocolOOT.exe` в папках с именем версии (`windows/1.6.2/…`).
+2. Ищет `manifest.json` и `ProtocolOOT.exe` в папках с именем версии (`windows/1.5.2/…`).
 3. Выбирается **новейшая** версия, которая выше текущей (`APP_VERSION`).
 4. Если версия новее — показывается диалог установки.
 5. Новый `.exe` копируется рядом с текущим как `ProtocolOOT.exe.new`, проверяется **размер** и **SHA-256**.
@@ -59,7 +59,7 @@
 ```text
 py -3 tools/publish_update_manifest.py ^
   --exe "D:\ProtocolOHT_onefile\ProtocolOOT.exe" ^
-  --version 1.6.0 ^
+  --version 1.5.2 ^
   --share-root "\\SERVER\SOFT\ProtocolOOT" ^
   --change "Краткое описание изменения"
 ```
@@ -81,7 +81,7 @@ py -3 tools/publish_update_manifest.py ^
 ```text
 D:\Обновление\
   manifest.json
-  windows\1.6.1\ProtocolOOT.exe
+  windows\1.5.2\ProtocolOOT.exe
 ```
 
 Рядом с `ProtocolOOT.exe` — `update_config.json`:
@@ -107,7 +107,7 @@ py -3 tools/scan_update_share.py
 ```text
 py -3 tools/publish_update_manifest.py ^
   --exe "ProtocolOHT_onefile\ProtocolOOT.exe" ^
-  --version 1.6.1 ^
+  --version 1.5.2 ^
   --share-root "D:\Обновление" ^
   --change "Тестовое обновление"
 ```
@@ -117,7 +117,7 @@ py -3 tools/publish_update_manifest.py ^
 При **onefile**-сборке PyInstaller распаковывает exe во временную папку `%TEMP%\_MEI…`.  
 После **автообновления** (перезапуск exe) Windows иногда показывает предупреждение, что эту папку не удалось стереть. Это **не ошибка программы** — на работу ProtocolOOT не влияет; Windows очистит `%TEMP%` позже.
 
-С версии 1.6.1 перезапуск после обновления идёт через `cmd start` (отдельный процесс), чтобы таких предупреждений было меньше.
+С версии 1.5.2 перезапуск после обновления идёт через `cmd start` (отдельный процесс), чтобы таких предупреждений было меньше.
 
 ## Этап 2 — обновление `data/`
 

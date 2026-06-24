@@ -24,7 +24,7 @@ class TestUpdateDataInstaller(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             share = root / "share"
-            version_dir = share / "windows" / "1.6.3"
+            version_dir = share / "windows" / "1.5.2"
             data_share = version_dir / "data"
             data_share.mkdir(parents=True)
             payload = b"new-template"
@@ -42,15 +42,15 @@ class TestUpdateDataInstaller(unittest.TestCase):
 
             manifest_path = share / "manifest.json"
             manifest = UpdateManifest(
-                latest_version="1.6.3",
+                latest_version="1.5.2",
                 windows=WindowsUpdatePayload(
-                    relative_path="windows/1.6.3/ProtocolOOT.exe",
+                    relative_path="windows/1.5.2/ProtocolOOT.exe",
                     sha256="00" * 32,
                     size=3,
                 ),
                 data_files=[
                     DataFilePayload(
-                        relative_path="windows/1.6.3/data/default_protocol.docx",
+                        relative_path="windows/1.5.2/data/default_protocol.docx",
                         sha256=digest,
                         size=len(payload),
                         policy="replace",
@@ -68,7 +68,7 @@ class TestUpdateDataInstaller(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             share = root / "share"
-            version_dir = share / "windows" / "1.6.3" / "data"
+            version_dir = share / "windows" / "1.5.2" / "data"
             version_dir.mkdir(parents=True)
             (version_dir / "default_protocol.docx").write_bytes(b"bad")
 
@@ -82,15 +82,15 @@ class TestUpdateDataInstaller(unittest.TestCase):
 
             manifest_path = share / "manifest.json"
             manifest = UpdateManifest(
-                latest_version="1.6.3",
+                latest_version="1.5.2",
                 windows=WindowsUpdatePayload(
-                    relative_path="windows/1.6.3/ProtocolOOT.exe",
+                    relative_path="windows/1.5.2/ProtocolOOT.exe",
                     sha256="00" * 32,
                     size=3,
                 ),
                 data_files=[
                     DataFilePayload(
-                        relative_path="windows/1.6.3/data/default_protocol.docx",
+                        relative_path="windows/1.5.2/data/default_protocol.docx",
                         sha256="ab" * 32,
                         size=3,
                         policy="replace",
@@ -109,7 +109,7 @@ class TestUpdateDataInstaller(unittest.TestCase):
             exe = Path(tmp) / "ProtocolOOT.exe"
             exe.write_bytes(b"x")
             entry = DataFilePayload(
-                relative_path="windows/1.6.3/data/FAQ.txt",
+                relative_path="windows/1.5.2/data/FAQ.txt",
                 sha256="00" * 32,
                 size=1,
             )

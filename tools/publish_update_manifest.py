@@ -82,7 +82,7 @@ def publish(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Опубликовать обновление ProtocolOOT на шару")
     parser.add_argument("--exe", type=Path, required=True, help="Путь к собранному ProtocolOOT.exe")
-    parser.add_argument("--version", required=True, help="Версия релиза, напр. 1.6.0")
+    parser.add_argument("--version", required=True, help="Версия релиза, напр. 1.5.2")
     parser.add_argument(
         "--share-root",
         type=Path,
