@@ -82,6 +82,12 @@ _PYI_HIDDEN = [
     "protocol_app_info",
     "protocol_ui",
     "protocol_embedded_assets",
+    "startup_update",
+    "update_config",
+    "update_manifest",
+    "update_installer",
+    "version_compare",
+    "changelog_dialog",
 ]
 
 # Копируются в data/ рядом с exe (.md в поставку не включаются — только docx/xlsx/txt).

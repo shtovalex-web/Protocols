@@ -70,6 +70,41 @@ py -3 tools/publish_update_manifest.py ^
 
 Стабильная версия до автообновления: **тег `v1.5.1`** в репозитории.
 
+## Локальная тестовая шара (Windows)
+
+Для проверки без сетевого UNC можно использовать папку **`D:\Обновление`**:
+
+```text
+D:\Обновление\
+  manifest.json
+  windows\1.6.1\ProtocolOOT.exe
+```
+
+Рядом с `ProtocolOOT.exe` — `update_config.json`:
+
+```json
+{
+  "manifest_path": "D:\\Обновление\\manifest.json",
+  "enabled": true
+}
+```
+
+Проверка манифеста и sha256 без GUI:
+
+```text
+py -3 tools/test_update_share.py
+```
+
+Публикация тестового обновления:
+
+```text
+py -3 tools/publish_update_manifest.py ^
+  --exe "ProtocolOHT_onefile\ProtocolOOT.exe" ^
+  --version 1.6.1 ^
+  --share-root "D:\Обновление" ^
+  --change "Тестовое обновление"
+```
+
 ## Ограничения этапа 1
 
 - Только **Windows .exe** (без zip-пакета и без обновления каталога `data/`).
