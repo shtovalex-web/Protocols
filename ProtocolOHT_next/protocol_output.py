@@ -8,6 +8,10 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+from docx import Document
+
+from docx_template_protection import save_formed_protocol_docx
 from employees_io import EmployeeRecord
 from protocol_docx import _fill_protocol_form, build_filled_protocol_document, load_protocol_form_lines
 
