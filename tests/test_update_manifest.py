@@ -52,13 +52,13 @@ class TestUpdateManifest(unittest.TestCase):
                     {
                         "latest_version": "1.5.2",
                         "windows": {
-                            "relative_path": "windows/1.5.2/ProtocolOOT.exe",
+                            "relative_path": "ProtocolOOT.exe",
                             "sha256": "ab" * 32,
                             "size": 100,
                         },
                         "data_files": [
                             {
-                                "relative_path": "windows/1.5.2/data/FAQ.txt",
+                                "relative_path": "data/FAQ.txt",
                                 "sha256": "cd" * 32,
                                 "size": 50,
                                 "policy": "replace",
@@ -71,7 +71,7 @@ class TestUpdateManifest(unittest.TestCase):
             )
             manifest = load_update_manifest(manifest_path)
             self.assertEqual(len(manifest.replace_data_files()), 1)
-            self.assertEqual(manifest.data_files[0].relative_path, "windows/1.5.2/data/FAQ.txt")
+            self.assertEqual(manifest.data_files[0].relative_path, "data/FAQ.txt")
 
     def test_missing_manifest_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -16,6 +16,7 @@ from update_config import (  # noqa: E402
     UpdateConfig,
     format_manifest_path_for_json,
     parse_update_config_text,
+    resolve_update_share_root,
 )
 
 
@@ -41,6 +42,12 @@ class TestUpdateConfig(unittest.TestCase):
         self.assertEqual(
             format_manifest_path_for_json(Path(r"D:\Обновление\manifest.json")),
             "D:/Обновление/manifest.json",
+        )
+
+    def test_resolve_update_share_root_accepts_directory(self):
+        self.assertEqual(
+            resolve_update_share_root(Path(r"D:/Обновление")),
+            Path(r"D:/Обновление"),
         )
 
 

@@ -11,7 +11,9 @@ from pathlib import Path
 
 from app_paths import application_user_dir
 
-DEFAULT_MANIFEST_PATH = Path(r"\\SERVER\SOFT\ProtocolOOT\manifest.json")
+DEFAULT_UPDATE_SHARE_ROOT = Path(r"\\SERVER\SOFT\ProtocolOOT")
+# Обратная совместимость (старые конфиги указывали файл manifest.json в корне шары).
+DEFAULT_MANIFEST_PATH = DEFAULT_UPDATE_SHARE_ROOT / "manifest.json"
 UPDATE_CONFIG_FILENAME = "update_config.json"
 ENV_MANIFEST = "PROTOCOLOOT_UPDATE_MANIFEST"
 ENV_FORCE_CHECK = "PROTOCOLOOT_UPDATE_CHECK"
@@ -22,8 +24,27 @@ _ENABLED_RE = re.compile(r'"enabled"\s*:\s*(true|false)', re.IGNORECASE)
 
 @dataclass
 class UpdateConfig:
-    manifest_path: Path = DEFAULT_MANIFEST_PATH
+    manifest_path: Path = DEFAULT_UPDATE_SHARE_ROOT
     enabled: bool = True
+
+
+def resolve_update_share_root(config_path: Path) -> Path:
+    """Каталог шары: из пути к manifest.json, к папке версии или напрямую из каталога."""
+    from version_compare import parse_version
+
+    resolved = config_path.expanduser().resolve()
+    if resolved.is_dir():
+        return resolved
+    if resolved.name.lower() != "manifest.json":
+        return resolved.parent
+    parent = resolved.parent
+    try:
+        parse_version(parent.name)
+    except ValueError:
+        return parent
+    if parent.parent.name.lower() == "windows":
+        return parent.parent.parent
+    return parent
 
 
 def update_config_path() -> Path:

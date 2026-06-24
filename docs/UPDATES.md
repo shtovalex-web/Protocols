@@ -4,15 +4,15 @@
 
 ## Как это работает
 
-1. При старте `.exe` программа читает `manifest.json` и **сканирует вложенные каталоги** шары.
-2. Ищет `manifest.json` и `ProtocolOOT.exe` в папках с именем версии (`windows/1.5.2/…`).
+1. При старте `.exe` программа **сканирует каталог шары** (`update_config.json` → путь к каталогу).
+2. Ищет `manifest.json` и `ProtocolOOT.exe` в `windows/<версия>/` (манифест **лежит рядом с exe** этой версии).
 3. Выбирается **новейшая** версия, которая выше текущей (`APP_VERSION`).
 4. Если версия новее — показывается диалог установки.
 5. Новый `.exe` копируется рядом с текущим как `ProtocolOOT.exe.new`, проверяется **размер** и **SHA-256**.
 6. Текущий файл переименовывается в `.old`, новый — в рабочее имя; запускается обновлённый процесс с `--show-changelog=версия`.
 7. Ошибки сети или недоступность шары **не блокируют** запуск (тихий старт).
 
-Даже если корневой `manifest.json` устарел, программа найдёт более новый `ProtocolOOT.exe` во вложенных папках `windows/<версия>/`.
+Даже если в корне шары остался старый `manifest.json`, программа найдёт релизы в `windows/<версия>/manifest.json`.
 
 Ручная проверка: **«Справка» → «Проверить обновления…»**.
 
@@ -20,7 +20,7 @@
 
 | Что | Значение |
 |-----|----------|
-| Манифест на шаре | `\\SERVER\SOFT\ProtocolOOT\manifest.json` |
+| Каталог шары | `\\SERVER\SOFT\ProtocolOOT` |
 | Локальный конфиг | `update_config.json` рядом с `.exe` / в корне проекта |
 | Пример манифеста | `docs/update_manifest.example.json` |
 
@@ -28,12 +28,12 @@
 
 ```json
 {
-  "manifest_path": "\\\\SERVER\\SOFT\\ProtocolOOT\\manifest.json",
+  "manifest_path": "//SERVER/SOFT/ProtocolOOT",
   "enabled": true
 }
 ```
 
-Поле `manifest_path` — UNC или локальный путь к `manifest.json`.
+Поле `manifest_path` — **каталог шары** (рекомендуется) или путь к `manifest.json` (устаревший вариант).
 
 ## Переменные окружения
 
@@ -66,9 +66,25 @@ py -3 tools/publish_update_manifest.py ^
 
 Скрипт:
 
-1. Кладёт exe в `share-root/windows/<версия>/ProtocolOOT.exe`.
+1. Кладёт exe и `data/` в `share-root/windows/<версия>/`.
 2. Считает SHA-256 и размер.
-3. Записывает `manifest.json` в корень шары.
+3. Записывает **`manifest.json` в ту же папку версии** (`windows/<версия>/manifest.json`).
+
+Структура шары:
+
+```text
+\\SERVER\SOFT\ProtocolOOT\
+  windows\
+    1.5.2\
+      manifest.json
+      ProtocolOOT.exe
+      data\
+        default_protocol.docx
+        FAQ.txt
+        …
+    1.5.3\
+      …
+```
 
 ## Откат
 
@@ -80,20 +96,21 @@ py -3 tools/publish_update_manifest.py ^
 
 ```text
 D:\Обновление\
-  manifest.json
-  windows\1.5.2\ProtocolOOT.exe
+  windows\
+    1.5.2\
+      manifest.json
+      ProtocolOOT.exe
+      data\
 ```
 
 Рядом с `ProtocolOOT.exe` — `update_config.json`:
 
 ```json
 {
-  "manifest_path": "D:/Обновление/manifest.json",
+  "manifest_path": "D:/Обновление",
   "enabled": true
 }
 ```
-
-Для локальных путей Windows удобнее **прямые слэши** (`D:/…`) — JSON не требует экранирования `\`. UNC: `\\\\SERVER\\SOFT\\ProtocolOOT\\manifest.json` или `//SERVER/SOFT/ProtocolOOT/manifest.json`.
 
 Проверка манифеста и sha256 без GUI:
 

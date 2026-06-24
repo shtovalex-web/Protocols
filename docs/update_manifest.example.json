@@ -3,7 +3,7 @@
   "released": "2026-06-09",
   "mandatory": false,
   "windows": {
-    "relative_path": "windows/1.5.2/ProtocolOOT.exe",
+    "relative_path": "ProtocolOOT.exe",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
     "size": 1
   },
@@ -12,13 +12,13 @@
   ],
   "data_files": [
     {
-      "relative_path": "windows/1.5.2/data/default_protocol.docx",
+      "relative_path": "data/default_protocol.docx",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "size": 1,
       "policy": "replace"
     },
     {
-      "relative_path": "windows/1.5.2/data/FAQ.txt",
+      "relative_path": "data/FAQ.txt",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "size": 1,
       "policy": "replace"

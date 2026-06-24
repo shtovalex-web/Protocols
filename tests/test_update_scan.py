@@ -16,7 +16,6 @@ setup_main_project_paths()
 from update_scan import (  # noqa: E402
     resolve_latest_update,
     scan_update_candidates,
-    share_root_from_manifest,
 )
 
 
@@ -60,7 +59,7 @@ class TestUpdateScan(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            resolved = resolve_latest_update(manifest_path, current_version="1.6.0")
+            resolved = resolve_latest_update(root, current_version="1.6.0")
             self.assertIsNotNone(resolved)
             assert resolved is not None
             self.assertEqual(resolved.version, "1.6.2")
@@ -87,7 +86,7 @@ class TestUpdateScan(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            self.assertIsNone(resolve_latest_update(manifest_path, current_version="1.6.0"))
+            self.assertIsNone(resolve_latest_update(root, current_version="1.6.0"))
 
     def test_nested_manifest_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,15 +110,25 @@ class TestUpdateScan(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            resolved = resolve_latest_update(root / "manifest.json", current_version="1.6.0")
+            resolved = resolve_latest_update(root, current_version="1.6.0")
             self.assertIsNotNone(resolved)
             assert resolved is not None
             self.assertEqual(resolved.version, "1.7.0")
             self.assertEqual(resolved.manifest.changes_short, ["Релиз 1.7"])
 
     def test_share_root_from_manifest(self) -> None:
+        from update_config import resolve_update_share_root
+
         self.assertEqual(
-            share_root_from_manifest(Path(r"D:\Обновление\manifest.json")),
+            resolve_update_share_root(Path(r"D:\Обновление\manifest.json")),
+            Path(r"D:\Обновление"),
+        )
+        self.assertEqual(
+            resolve_update_share_root(Path(r"D:\Обновление")),
+            Path(r"D:\Обновление"),
+        )
+        self.assertEqual(
+            resolve_update_share_root(Path(r"D:\Обновление\windows\1.5.2\manifest.json")),
             Path(r"D:\Обновление"),
         )
 

@@ -55,21 +55,24 @@ def publish(
         shutil.copy2(src, target_data / name)
         copied_data += 1
 
-    data_entries = build_data_manifest_entries(data_src_dir=data_dir, version=version)
+    data_entries = build_data_manifest_entries(
+        data_src_dir=data_dir,
+        paths_relative_to_version_dir=True,
+    )
 
     manifest = {
         "latest_version": version,
         "released": released,
         "mandatory": mandatory,
         "windows": {
-            "relative_path": f"windows/{version}/{target_exe.name}".replace("\\", "/"),
+            "relative_path": target_exe.name,
             "sha256": digest,
             "size": size,
         },
         "changes_short": changes,
         "data_files": data_entries,
     }
-    manifest_path = share_root / "manifest.json"
+    manifest_path = target_dir / "manifest.json"
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

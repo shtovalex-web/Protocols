@@ -28,7 +28,9 @@ class UpdateCandidate:
 
 
 def share_root_from_manifest(manifest_path: Path) -> Path:
-    return manifest_path.expanduser().resolve().parent
+    from update_config import resolve_update_share_root
+
+    return resolve_update_share_root(manifest_path)
 
 
 def version_from_dir_name(name: str) -> str | None:
@@ -85,12 +87,15 @@ def _candidate_from_version_exe(
 ) -> UpdateCandidate | None:
     if not exe_path.is_file():
         return None
-    anchor = share_root / "manifest.json"
+    version_dir = exe_path.parent
+    manifest_file = version_dir / "manifest.json"
+    if manifest_file.is_file():
+        return _candidate_from_manifest_file(manifest_file)
     manifest = manifest_from_exe(share_root=share_root, exe_path=exe_path, version=version)
     return UpdateCandidate(
         version=version,
         manifest=manifest,
-        anchor_manifest_path=anchor,
+        anchor_manifest_path=share_root / "manifest.json",
         source=f"exe:{exe_path.relative_to(share_root)}",
     )
 
@@ -142,27 +147,14 @@ def pick_newest_update(
 
 
 def resolve_latest_update(
-    manifest_path: Path,
+    share_root: Path,
     *,
     current_version: str,
     exe_name: str = DEFAULT_WINDOWS_EXE_NAME,
 ) -> UpdateCandidate | None:
-    """Корневой manifest.json + сканирование вложенных каталогов; выбор новейшей версии."""
-    share_root = share_root_from_manifest(manifest_path)
-    candidates = scan_update_candidates(share_root, exe_name=exe_name)
-
-    primary = manifest_path.expanduser().resolve()
-    if primary.is_file():
-        primary_candidate = _candidate_from_manifest_file(primary)
-        if primary_candidate is not None:
-            replaced = False
-            for idx, candidate in enumerate(candidates):
-                if candidate.version == primary_candidate.version:
-                    candidates[idx] = primary_candidate
-                    replaced = True
-                    break
-            if not replaced:
-                candidates.append(primary_candidate)
-            candidates.sort(key=lambda item: parse_version(item.version))
-
+    """Сканирование каталога шары; выбор новейшей версии выше текущей."""
+    root = share_root.expanduser().resolve()
+    if not root.is_dir():
+        return None
+    candidates = scan_update_candidates(root, exe_name=exe_name)
     return pick_newest_update(candidates, current_version)

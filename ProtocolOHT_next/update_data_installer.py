@@ -34,7 +34,7 @@ def _backup_data_dir(exe_path: Path) -> None:
         return
     backup = data_backup_dir_for_exe(exe_path)
     if backup.exists():
-        shutil.rmtree(backup, ignore_errors=True)
+        shutil.rmtree(backup)
     shutil.copytree(src, backup)
 
 
@@ -44,7 +44,7 @@ def _restore_data_backup(exe_path: Path) -> None:
         return
     dest = data_dir_for_exe(exe_path)
     if dest.exists():
-        shutil.rmtree(dest, ignore_errors=True)
+        shutil.rmtree(dest)
     shutil.copytree(backup, dest)
 
 

@@ -25,7 +25,8 @@ DATA_POLICY_REPLACE = "replace"
 def build_data_manifest_entries(
     *,
     data_src_dir: Path,
-    version: str,
+    version: str | None = None,
+    paths_relative_to_version_dir: bool = False,
 ) -> list[dict[str, object]]:
     from update_manifest import sha256_file
 
@@ -34,7 +35,13 @@ def build_data_manifest_entries(
         src = data_src_dir / name
         if not src.is_file():
             continue
-        rel = f"windows/{version}/data/{name}".replace("\\", "/")
+        if paths_relative_to_version_dir:
+            rel = f"{DATA_SUBDIR_NAME}/{name}".replace("\\", "/")
+        else:
+            if not version:
+                msg = "version is required when paths_relative_to_version_dir is False"
+                raise ValueError(msg)
+            rel = f"windows/{version}/{DATA_SUBDIR_NAME}/{name}".replace("\\", "/")
         entries.append(
             {
                 "relative_path": rel,

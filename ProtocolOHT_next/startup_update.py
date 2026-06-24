@@ -11,7 +11,7 @@ from tkinter import messagebox
 
 from changelog_dialog import show_changelog_dialog
 from protocol_app_info import APP_VERSION
-from update_config import ENV_FORCE_CHECK, load_update_config
+from update_config import ENV_FORCE_CHECK, load_update_config, resolve_update_share_root
 from update_data_installer import apply_data_updates
 from update_installer import (
     UpdateInstallerError,
@@ -61,7 +61,7 @@ def _load_changelog_items(version: str) -> list[str]:
         if not config.enabled:
             return []
         resolved = resolve_latest_update(
-            config.manifest_path,
+            resolve_update_share_root(config.manifest_path),
             current_version=app_version(),
         )
         if resolved is not None and resolved.version == version:
@@ -73,7 +73,7 @@ def _load_changelog_items(version: str) -> list[str]:
 
 def _resolve_update(config) -> tuple[Path, object] | None:
     resolved = resolve_latest_update(
-        config.manifest_path,
+        resolve_update_share_root(config.manifest_path),
         current_version=app_version(),
     )
     if resolved is None:
@@ -136,13 +136,12 @@ def _run_update_check(*, force: bool, parent=None) -> bool:
             )
         return True
 
-    manifest_path = config.manifest_path
-    share_root = manifest_path.expanduser().resolve().parent
-    if not manifest_path.is_file() and not share_root.is_dir():
+    share_root = resolve_update_share_root(config.manifest_path)
+    if not share_root.is_dir():
         if force and parent is not None:
             messagebox.showinfo(
                 "Обновление",
-                f"Не удалось прочитать каталог обновлений:\n{manifest_path}",
+                f"Не удалось прочитать каталог обновлений:\n{share_root}",
                 parent=parent,
             )
         return True
@@ -157,7 +156,7 @@ def _run_update_check(*, force: bool, parent=None) -> bool:
             messagebox.showinfo(
                 "Обновление",
                 f"Установлена актуальная версия ({app_version()}).\n"
-                f"Каталог: {config.manifest_path.parent}",
+                f"Каталог: {share_root}",
                 parent=parent,
             )
         return True

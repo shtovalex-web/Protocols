@@ -12,20 +12,18 @@ sys.path.insert(0, str(_NEXT))
 sys.path.insert(1, str(ROOT))
 
 from protocol_app_info import APP_VERSION  # noqa: E402
-from update_config import load_update_config  # noqa: E402
+from update_config import load_update_config, resolve_update_share_root  # noqa: E402
 from update_scan import resolve_latest_update, scan_update_candidates  # noqa: E402
 from version_compare import is_newer_version  # noqa: E402
 
 
 def main() -> int:
     config = load_update_config()
-    manifest_path = config.manifest_path
-    share_root = manifest_path.parent
+    share_root = resolve_update_share_root(config.manifest_path)
     current = (APP_VERSION or "").strip()
 
     print(f"Текущая версия: {current}")
     print(f"Каталог шары: {share_root}")
-    print(f"Манифест: {manifest_path}")
     print()
 
     if not share_root.is_dir():
@@ -43,7 +41,7 @@ def main() -> int:
         payload = item.manifest.windows_payload_path(item.anchor_manifest_path)
         print(f"  [{flag}] {item.version} — {payload} ({item.source})")
 
-    resolved = resolve_latest_update(manifest_path, current_version=current)
+    resolved = resolve_latest_update(share_root, current_version=current)
     print()
     if resolved is None:
         print("Установлена актуальная версия — обновление не требуется.")
