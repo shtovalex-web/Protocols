@@ -34,17 +34,18 @@ class TestUpdateShareIntegration(unittest.TestCase):
 
         def _ask_yesno(title, text, parent=None):
             asked.append(True)
-            self.assertIn("1.6.1", text)
+            self.assertIn("Доступна новая версия", text)
             return False
 
         with patch("startup_update.is_frozen", return_value=True):
             with patch("startup_update.current_exe_path", return_value=EXE_PATH):
-                with patch("startup_update.load_update_config") as load_cfg:
-                    from update_config import UpdateConfig
+                with patch("startup_update.app_version", return_value="1.6.0"):
+                    with patch("startup_update.load_update_config") as load_cfg:
+                        from update_config import UpdateConfig
 
-                    load_cfg.return_value = UpdateConfig(manifest_path=SHARE_MANIFEST)
-                    with patch("startup_update.messagebox.askyesno", side_effect=_ask_yesno):
-                        self.assertTrue(prepare_startup_updates([str(EXE_PATH)]))
+                        load_cfg.return_value = UpdateConfig(manifest_path=SHARE_MANIFEST)
+                        with patch("startup_update.messagebox.askyesno", side_effect=_ask_yesno):
+                            self.assertTrue(prepare_startup_updates([str(EXE_PATH)]))
         self.assertTrue(asked, "диалог обновления не был показан")
 
 

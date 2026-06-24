@@ -21,8 +21,8 @@ from update_installer import (
     staged_new_exe_path,
     swap_exe_via_rename,
 )
-from update_manifest import UpdateManifest, UpdateManifestError, load_update_manifest
-from version_compare import is_newer_version
+from update_manifest import UpdateManifestError
+from update_scan import resolve_latest_update
 
 
 def is_frozen() -> bool:
@@ -59,12 +59,25 @@ def _load_changelog_items(version: str) -> list[str]:
         config = load_update_config()
         if not config.enabled:
             return []
-        manifest = load_update_manifest(config.manifest_path)
-        if manifest.latest_version == version:
-            return list(manifest.changes_short)
+        resolved = resolve_latest_update(
+            config.manifest_path,
+            current_version=app_version(),
+        )
+        if resolved is not None and resolved.version == version:
+            return list(resolved.manifest.changes_short)
     except (UpdateManifestError, OSError):
         return []
     return []
+
+
+def _resolve_update(config) -> tuple[Path, object] | None:
+    resolved = resolve_latest_update(
+        config.manifest_path,
+        current_version=app_version(),
+    )
+    if resolved is None:
+        return None
+    return resolved.anchor_manifest_path, resolved.manifest
 
 
 def _ask_install_update(
@@ -86,7 +99,7 @@ def _ask_install_update(
     return messagebox.askyesno("Обновление программы", text, parent=parent)
 
 
-def _perform_update(manifest_path: Path, manifest: UpdateManifest, exe_path: Path) -> None:
+def _perform_update(manifest_path: Path, manifest, exe_path: Path) -> None:
     source = manifest.windows_payload_path(manifest_path)
     stage_payload_copy(
         source,
@@ -118,26 +131,33 @@ def _run_update_check(*, force: bool, parent=None) -> bool:
             )
         return True
 
-    try:
-        manifest = load_update_manifest(config.manifest_path)
-    except (UpdateManifestError, OSError):
+    manifest_path = config.manifest_path
+    share_root = manifest_path.expanduser().resolve().parent
+    if not manifest_path.is_file() and not share_root.is_dir():
         if force and parent is not None:
             messagebox.showinfo(
                 "Обновление",
-                f"Не удалось прочитать манифест:\n{config.manifest_path}",
+                f"Не удалось прочитать каталог обновлений:\n{manifest_path}",
                 parent=parent,
             )
         return True
 
-    current = app_version()
-    if not is_newer_version(manifest.latest_version, current):
+    try:
+        resolved = _resolve_update(config)
+    except (UpdateManifestError, OSError):
+        resolved = None
+
+    if resolved is None:
         if force and parent is not None:
             messagebox.showinfo(
                 "Обновление",
-                f"Установлена актуальная версия ({current}).",
+                f"Установлена актуальная версия ({app_version()}).\n"
+                f"Каталог: {config.manifest_path.parent}",
                 parent=parent,
             )
         return True
+
+    manifest_path, manifest = resolved
 
     exe_path = current_exe_path()
     if exe_path is None:
@@ -158,7 +178,7 @@ def _run_update_check(*, force: bool, parent=None) -> bool:
         return True
 
     try:
-        _perform_update(config.manifest_path, manifest, exe_path)
+        _perform_update(manifest_path, manifest, exe_path)
     except (UpdateInstallerError, OSError) as error:
         messagebox.showerror(
             "Обновление",
