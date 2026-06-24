@@ -7,19 +7,26 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-
-from docx import Document
-from fpdf import FPDF
-
-try:
-    from fpdf.enums import XPos, YPos
-except ImportError:
-    XPos = None  # type: ignore[misc, assignment]
-    YPos = None  # type: ignore[misc, assignment]
-
-from docx_template_protection import save_formed_protocol_docx
+from typing import Any
 from employees_io import EmployeeRecord
 from protocol_docx import _fill_protocol_form, build_filled_protocol_document, load_protocol_form_lines
+
+_FPDF_TYPES: tuple[type[Any], Any, Any] | None = None
+
+
+def _ensure_fpdf() -> tuple[type[Any], Any, Any]:
+    """fpdf2 при import тянет sign → unittest.mock → asyncio → _overlapped; откладываем до PDF."""
+    global _FPDF_TYPES
+    if _FPDF_TYPES is None:
+        from fpdf import FPDF
+
+        try:
+            from fpdf.enums import XPos, YPos
+        except ImportError:
+            XPos = None
+            YPos = None
+        _FPDF_TYPES = (FPDF, XPos, YPos)
+    return _FPDF_TYPES
 
 
 def build_protocol_text(
@@ -38,7 +45,7 @@ def build_protocol_text(
     return "\n".join(filled)
 
 
-def _fpdf_try_add_ttf(pdf: FPDF, family: str, ttf_path: Path) -> None:
+def _fpdf_try_add_ttf(pdf: Any, family: str, ttf_path: Path) -> None:
     """Совместимость PyFPDF 1.x (uni=True) и fpdf2 (аргумент uni удалён)."""
     p = str(ttf_path.resolve())
     try:
@@ -47,7 +54,7 @@ def _fpdf_try_add_ttf(pdf: FPDF, family: str, ttf_path: Path) -> None:
         pdf.add_font(family, "", p)
 
 
-def _fpdf_output_file(pdf: FPDF, path: str) -> None:
+def _fpdf_output_file(pdf: Any, path: str) -> None:
     try:
         pdf.output(path, "F")
     except TypeError:
@@ -60,7 +67,7 @@ def _windows_cyrillic_ttf_candidates() -> list[Path]:
     return [fonts / n for n in names if (fonts / n).is_file()]
 
 
-def _configure_fpdf_font(pdf: FPDF, content: str) -> None:
+def _configure_fpdf_font(pdf: Any, content: str) -> None:
     """Latin-1 — Helvetica; кириллица — первый подходящий TTF из папки Fonts Windows."""
     try:
         content.encode("latin-1")
@@ -86,6 +93,7 @@ def _configure_fpdf_font(pdf: FPDF, content: str) -> None:
 
 
 def write_protocol_pdf(path: str, content: str) -> None:
+    FPDF, XPos, YPos = _ensure_fpdf()
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()

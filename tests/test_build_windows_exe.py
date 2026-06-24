@@ -33,6 +33,10 @@ class TestBuildWindowsExeBundle(unittest.TestCase):
         self.assertIn("fontTools", mod._PYI_COLLECT_SUBMODULES)
         self.assertIn("fontTools.varLib.iup", mod._PYI_EXTRA_HIDDEN)
 
+    def test_pyinstaller_includes_overlapped_for_fpdf_asyncio(self):
+        mod = _load_build_module()
+        self.assertIn("_overlapped", mod._PYI_EXTRA_HIDDEN)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -100,6 +100,8 @@ _PYI_EXTRA_HIDDEN = (
     "fontTools",
     "fontTools.varLib",
     "fontTools.varLib.iup",
+    "_overlapped",
+    "asyncio.windows_events",
 )
 
 # Копируются в data/ рядом с exe (.md в поставку не включаются — только docx/xlsx/txt).
