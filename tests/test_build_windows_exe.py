@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -36,6 +37,15 @@ class TestBuildWindowsExeBundle(unittest.TestCase):
     def test_pyinstaller_includes_overlapped_for_fpdf_asyncio(self):
         mod = _load_build_module()
         self.assertIn("_overlapped", mod._PYI_EXTRA_HIDDEN)
+
+    def test_copy_bundle_asset_copies_file(self):
+        mod = _load_build_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.txt"
+            dst = Path(tmp) / "dst.txt"
+            src.write_text("hello", encoding="utf-8")
+            self.assertTrue(mod._copy_bundle_asset(src, dst))
+            self.assertEqual(dst.read_text(encoding="utf-8"), "hello")
 
 
 if __name__ == "__main__":

@@ -125,6 +125,16 @@ BUNDLE_FILES = [
 BUNDLE_EXE_ROOT_XLSX = (_EMPLOYEES_XLSX, _PROGRAMS_XLSX)
 
 
+def _copy_bundle_asset(src: Path, dst: Path) -> bool:
+    """Копирует файл комплекта; False — файл занят или нет прав (сборка exe уже готова)."""
+    try:
+        shutil.copy2(src, dst)
+        return True
+    except OSError as error:
+        print(f"  Внимание: не удалось скопировать {dst.name}: {error}", file=sys.stderr)
+        return False
+
+
 def _pick_output_dir_interactive() -> Path | None:
     """Диалог выбора папки; None — пользователь отменил или tkinter недоступен."""
     try:
@@ -274,18 +284,23 @@ def main() -> int:
     data_dir.mkdir(parents=True, exist_ok=True)
 
     copied = 0
+    copy_failures: list[str] = []
     for name in BUNDLE_FILES:
         src = _bundle_src(name)
         if src.is_file():
-            shutil.copy2(src, data_dir / name)
-            copied += 1
-            if name in BUNDLE_EXE_ROOT_XLSX:
-                shutil.copy2(src, OUT_DIR / name)
+            if _copy_bundle_asset(src, data_dir / name):
+                copied += 1
+                if name in BUNDLE_EXE_ROOT_XLSX:
+                    _copy_bundle_asset(src, OUT_DIR / name)
+            else:
+                copy_failures.append(name)
 
     faq_src = _bundle_src("FAQ.md")
     if faq_src.is_file():
-        shutil.copy2(faq_src, data_dir / "FAQ.txt")
-        copied += 1
+        if _copy_bundle_asset(faq_src, data_dir / "FAQ.txt"):
+            copied += 1
+        else:
+            copy_failures.append("FAQ.txt")
 
     for label, xname in (
         ("база сотрудников", _EMPLOYEES_XLSX),
@@ -303,6 +318,18 @@ def main() -> int:
     print("Сборка завершена.")
     print(f"  {exe}")
     print(f"  Комплект в {data_dir.name}/: {copied} файл(ов)")
+    if copy_failures:
+        print(
+            f"\nВнимание: не скопированы {len(copy_failures)} файл(ов): "
+            + ", ".join(copy_failures),
+            file=sys.stderr,
+        )
+        print(
+            "Закройте ProtocolOOT.exe, Word и повторите только копирование "
+            f"(или пересоберите). Папка: {data_dir}",
+            file=sys.stderr,
+        )
+        return 1
     print()
     print(f"Переносите на другие ПК всю папку:\n  {OUT_DIR}")
     return 0
