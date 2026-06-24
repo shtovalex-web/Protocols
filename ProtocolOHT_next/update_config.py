@@ -1,10 +1,11 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8
 """Локальная конфигурация проверки обновлений."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +15,9 @@ DEFAULT_MANIFEST_PATH = Path(r"\\SERVER\SOFT\ProtocolOOT\manifest.json")
 UPDATE_CONFIG_FILENAME = "update_config.json"
 ENV_MANIFEST = "PROTOCOLOOT_UPDATE_MANIFEST"
 ENV_FORCE_CHECK = "PROTOCOLOOT_UPDATE_CHECK"
+
+_MANIFEST_PATH_RE = re.compile(r'"manifest_path"\s*:\s*"([^"]*)"')
+_ENABLED_RE = re.compile(r'"enabled"\s*:\s*(true|false)', re.IGNORECASE)
 
 
 @dataclass
@@ -26,6 +30,43 @@ def update_config_path() -> Path:
     return application_user_dir() / UPDATE_CONFIG_FILENAME
 
 
+def format_manifest_path_for_json(path: Path | str) -> str:
+    """Путь для JSON: прямые слэши (безопасно при ручном редактировании на Windows)."""
+    return str(path).replace("\\", "/")
+
+
+def _config_from_dict(data: dict) -> UpdateConfig:
+    manifest_raw = data.get("manifest_path", DEFAULT_MANIFEST_PATH)
+    enabled = bool(data.get("enabled", True))
+    return UpdateConfig(manifest_path=Path(str(manifest_raw)), enabled=enabled)
+
+
+def parse_update_config_text(raw: str) -> UpdateConfig | None:
+    """Разбор текста конфигурации; None — не удалось прочитать."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        manifest_match = _MANIFEST_PATH_RE.search(text)
+        if manifest_match is None:
+            return None
+        enabled = True
+        enabled_match = _ENABLED_RE.search(text)
+        if enabled_match is not None:
+            enabled = enabled_match.group(1).lower() == "true"
+        return UpdateConfig(
+            manifest_path=Path(manifest_match.group(1)),
+            enabled=enabled,
+        )
+
+    if not isinstance(data, dict):
+        return None
+    return _config_from_dict(data)
+
+
 def load_update_config() -> UpdateConfig:
     env_path = os.environ.get(ENV_MANIFEST, "").strip()
     if env_path:
@@ -35,10 +76,12 @@ def load_update_config() -> UpdateConfig:
     if not path.is_file():
         return UpdateConfig()
 
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
         return UpdateConfig()
 
-    manifest_raw = data.get("manifest_path", DEFAULT_MANIFEST_PATH)
-    enabled = bool(data.get("enabled", True))
-    return UpdateConfig(manifest_path=Path(str(manifest_raw)), enabled=enabled)
+    parsed = parse_update_config_text(raw)
+    if parsed is None:
+        return UpdateConfig()
+    return parsed

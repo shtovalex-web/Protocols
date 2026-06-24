@@ -88,10 +88,12 @@ D:\Обновление\
 
 ```json
 {
-  "manifest_path": "D:\\Обновление\\manifest.json",
+  "manifest_path": "D:/Обновление/manifest.json",
   "enabled": true
 }
 ```
+
+Для локальных путей Windows удобнее **прямые слэши** (`D:/…`) — JSON не требует экранирования `\`. UNC: `\\\\SERVER\\SOFT\\ProtocolOOT\\manifest.json` или `//SERVER/SOFT/ProtocolOOT/manifest.json`.
 
 Проверка манифеста и sha256 без GUI:
 

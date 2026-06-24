@@ -39,7 +39,7 @@ class TestUpdateShareIntegration(unittest.TestCase):
 
         with patch("startup_update.is_frozen", return_value=True):
             with patch("startup_update.current_exe_path", return_value=EXE_PATH):
-                with patch("startup_update.app_version", return_value="1.6.0"):
+                with patch("startup_update.app_version", return_value="1.5.1"):
                     with patch("startup_update.load_update_config") as load_cfg:
                         from update_config import UpdateConfig
 

@@ -143,10 +143,10 @@ def _ensure_update_config(out_dir: Path) -> bool:
         return False
     if str(NEXT) not in sys.path:
         sys.path.insert(0, str(NEXT))
-    from update_config import DEFAULT_MANIFEST_PATH
+    from update_config import DEFAULT_MANIFEST_PATH, format_manifest_path_for_json
 
     payload = {
-        "manifest_path": str(DEFAULT_MANIFEST_PATH),
+        "manifest_path": format_manifest_path_for_json(DEFAULT_MANIFEST_PATH),
         "enabled": True,
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
