@@ -122,7 +122,7 @@ def _shot_menu(app: tk.Tk, menu_label: str, filename: str, x_offset: int) -> boo
         rx = app.winfo_rootx()
         ry = app.winfo_rooty()
         rw = min(max(app.winfo_width(), 420), 560)
-        rh = 320
+        rh = 380 if menu_label == "Справка" else 320
         ok = _grab_bbox((rx, ry, rx + rw, ry + rh), filename)
     finally:
         try:
@@ -154,6 +154,30 @@ def _shot_hotkeys_reference(app: tk.Tk) -> bool:
     return ok
 
 
+def _shot_update_dialog_reference(app: tk.Tk) -> bool:
+    win = tk.Toplevel(app)
+    win.title("Обновление программы")
+    win.transient(app)
+    frm = ttk.Frame(win, padding=14)
+    frm.pack(fill=tk.BOTH, expand=True)
+    txt = (
+        "Доступна новая версия 1.5.3.\n\n"
+        "• Автообновление exe + data/\n\n"
+        "Будут обновлены программа и файлы в папке data/ (шаблоны, справка).\n"
+        "Файлы в корне папки (базы, protocols.db) не изменяются.\n\n"
+        "Установить обновление сейчас?"
+    )
+    ttk.Label(frm, text=txt, justify=tk.LEFT, wraplength=420).pack(anchor=tk.W)
+    bar = ttk.Frame(frm)
+    bar.pack(anchor=tk.E, pady=(12, 0))
+    ttk.Button(bar, text="Да", command=win.destroy).pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Button(bar, text="Нет", command=win.destroy).pack(side=tk.LEFT)
+    win.update_idletasks()
+    ok = _shot(win, "20_obnovlenie_dialog.png", "диалог обновления")
+    win.destroy()
+    return ok
+
+
 def main() -> int:
     sys.path.insert(0, str(ROOT / "ProtocolOHT_next"))
     sys.path.insert(0, str(ROOT))
@@ -176,6 +200,8 @@ def main() -> int:
     if _shot_menu(app, "Минтруд", "13_menu_mintrud.png", 148):
         ok += 1
     if _shot_menu(app, "Справка", "14_menu_spravka.png", 228):
+        ok += 1
+    if _shot_update_dialog_reference(app):
         ok += 1
 
     app.var_emp_search.set("ов")
