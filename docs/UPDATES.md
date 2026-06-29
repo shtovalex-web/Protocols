@@ -153,9 +153,11 @@ py -3 tools/publish_update_manifest.py ^
 
 - `default_protocol.docx`, `default_protocol_tehnicheskiy.docx`
 - инструкции `.docx`, `FAQ.txt`, `ЖУРНАЛ_ДОРАБОТОК.md`
-- шаблоны Минтруд XSD (`.xlsx`), `icon.ico`, **`update_info.json`**
+- шаблоны Минтруд XSD (`.xlsx`), `icon.ico`
 
 **Не обновляются:** `protocols.db`, Excel в **корне**, `Protokol/`, `Mintrud/`, `update_config.json`.
+
+**`data/update_info.json`** — локальный маркер версии комплекта; пишется при сборке и после обновления, **не входит** в `data_files` на шаре.
 
 Перед заменой каждого файла создаётся копия **`<имя>.bak`** в `data/`; после успеха `.bak` удаляются. Папка **`data.backup/`** не создаётся. В `manifest.json` — секция **`data_files`**.
 

@@ -66,7 +66,7 @@ def stage_payload_copy(
     digest = sha256_file(destination)
     if digest.lower() != expected_sha256.lower():
         destination.unlink(missing_ok=True)
-        msg = "Update file checksum mismatch."
+        msg = f"Update file checksum mismatch: {source.name}"
         raise UpdateInstallerError(msg)
     return destination
 

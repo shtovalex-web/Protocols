@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 # Только каталог data/ рядом с exe. Файлы в корне (protocols.db, Data_base.xlsx…) не обновляются.
+# update_info.json — локальный маркер версии (пишется при сборке/обновлении), на шару не публикуется.
 DATA_REPLACE_FILENAMES: tuple[str, ...] = (
-    "update_info.json",
     "default_protocol.docx",
     "default_protocol_tehnicheskiy.docx",
     "ПОДРОБНАЯ_ИНСТРУКЦИЯ_для_пользователя.docx",

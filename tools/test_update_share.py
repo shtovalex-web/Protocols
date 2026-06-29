@@ -1,64 +1,79 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8
 """Проверка тестовой шары обновлений (без GUI)."""
 
 from __future__ import annotations
 
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 _NEXT = ROOT / "ProtocolOHT_next"
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(_NEXT))
+sys.path.insert(0, str(ROOT / "tools"))
 
 from protocol_app_info import APP_VERSION  # noqa: E402
+from startup_update import app_version  # noqa: E402
+from update_config import resolve_update_share_root  # noqa: E402
 from update_installer import stage_payload_copy  # noqa: E402
-from update_manifest import load_update_manifest  # noqa: E402
-from version_compare import is_newer_version  # noqa: E402
+from update_scan import resolve_latest_update  # noqa: E402
+from publish_update_manifest import verify_manifest_payload  # noqa: E402
 
 SHARE_ROOT = Path(r"D:\Обновление")
-MANIFEST_PATH = SHARE_ROOT / "manifest.json"
 
 
 def main() -> int:
-    if not MANIFEST_PATH.is_file():
-        print(f"FAIL: нет манифеста: {MANIFEST_PATH}")
+    if not SHARE_ROOT.is_dir():
+        print(f"FAIL: нет каталога шары: {SHARE_ROOT}")
         return 1
 
-    manifest = load_update_manifest(MANIFEST_PATH)
-    payload = manifest.windows_payload_path(MANIFEST_PATH)
-    current = (APP_VERSION or "").strip()
+    current = app_version() or (APP_VERSION or "").strip()
+    resolved = resolve_latest_update(SHARE_ROOT, current_version=current, platform="windows")
+    if resolved is None:
+        print(f"Текущая версия: {current}")
+        print(f"Каталог шары: {SHARE_ROOT}")
+        print("OK: актуальная версия или нет релизов в windows/<версия>/")
+        return 0
 
-    print(f"Текущая версия в исходниках: {current}")
-    print(f"Версия в манифесте: {manifest.latest_version}")
+    manifest_path = resolved.anchor_manifest_path
+    manifest = resolved.manifest
+    payload = manifest.windows_payload_path(manifest_path)
+
+    print(f"Текущая версия: {current}")
+    print(f"Каталог шары: {resolve_update_share_root(SHARE_ROOT)}")
+    print(f"Релиз на шаре: {resolved.version}")
+    print(f"Манифест: {manifest_path}")
     print(f"Файл обновления: {payload}")
+
+    errors = verify_manifest_payload(manifest_path)
+    if errors:
+        print("FAIL: manifest.json не совпадает с файлами на шаре:")
+        for item in errors:
+            print(f"  - {item}")
+        print(
+            "Исправление: py -3 tools/publish_update_manifest.py "
+            '--exe "…\\ProtocolOOT.exe" --version … --share-root "D:\\Обновление"'
+        )
+        return 1
 
     if not payload.is_file():
         print(f"FAIL: нет файла обновления: {payload}")
         return 1
 
-    payload_size = payload.stat().st_size
-    if payload_size != manifest.windows.size:
-        print(
-            f"FAIL: размер {payload} ({payload_size}) != manifest.json ({manifest.windows.size})"
-        )
-        print("Исправление: py -3 tools/publish_update_manifest.py --exe ... --share-root D:\\Обновление")
-        return 1
-
-    if not is_newer_version(manifest.latest_version, current):
-        print("FAIL: манифест не новее текущей версии — обновление не предложится")
-        return 1
-
-    with tempfile.TemporaryDirectory() as tmp:
-        staged = Path(tmp) / "ProtocolOOT.exe.new"
+    staged_parent = manifest_path.parent / "_verify_staging"
+    staged_parent.mkdir(exist_ok=True)
+    staged = staged_parent / "ProtocolOOT.exe.new"
+    try:
         stage_payload_copy(
             payload,
             staged,
             expected_sha256=manifest.windows.sha256,
             expected_size=manifest.windows.size,
         )
-        print(f"OK: копия и sha256 проверены ({staged.stat().st_size} байт)")
+        print(f"OK: exe — копия и sha256 ({staged.stat().st_size} байт)")
+    finally:
+        staged.unlink(missing_ok=True)
 
     config_path = ROOT / "ProtocolOHT_onefile" / "update_config.json"
     if config_path.is_file():
@@ -67,7 +82,7 @@ def main() -> int:
     else:
         print(f"WARN: нет {config_path}")
 
-    print("Готово: запустите ProtocolOHT_onefile\\ProtocolOOT.exe — должно предложить обновление.")
+    print("Готово: запустите ProtocolOOT.exe — должно предложить обновление.")
     return 0
 
 
