@@ -36,14 +36,30 @@ def data_file_destination(exe_path: Path, entry: DataFilePayload) -> Path:
     return data_dir_for_exe(exe_path) / name
 
 
+def _ensure_writable(path: Path) -> None:
+    import os
+    import stat
+
+    if not path.exists():
+        return
+    try:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+    except OSError:
+        pass
+
+
 def _cleanup_legacy_bak_files(data_dir: Path) -> None:
     """Удаляет устаревшие *.bak из data/ (от прежней схемы отката)."""
     if not data_dir.is_dir():
         return
+    import os
+    import stat
+
     for path in data_dir.glob(f"*{LEGACY_DATA_FILE_BACKUP_SUFFIX}"):
         if not path.is_file():
             continue
         try:
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
             path.unlink()
         except OSError:
             pass
@@ -152,6 +168,7 @@ def apply_data_updates(
             for entry in entries:
                 source = data_file_source(manifest_path, entry)
                 destination = data_file_destination(exe_path, entry)
+                _ensure_writable(destination)
                 try:
                     backup = _backup_data_file(temp_dir, destination)
                 except OSError as error:

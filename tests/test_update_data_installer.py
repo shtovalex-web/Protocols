@@ -106,6 +106,46 @@ class TestUpdateDataInstaller(unittest.TestCase):
             self.assertEqual((data_local / "FAQ.txt").read_bytes(), payload)
             self.assertFalse(stale_bak.exists())
 
+    def test_cleanup_readonly_legacy_bak(self) -> None:
+        import os
+        import stat
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_local = Path(tmp) / "data"
+            data_local.mkdir()
+            stale_bak = data_local / "FAQ.txt.bak"
+            stale_bak.write_bytes(b"stale")
+            os.chmod(stale_bak, stat.S_IREAD)
+
+            share = Path(tmp) / "share" / "windows" / "1.5.2" / "data"
+            share.mkdir(parents=True)
+            payload = b"new"
+            (share / "FAQ.txt").write_bytes(payload)
+            digest = hashlib.sha256(payload).hexdigest()
+            exe = Path(tmp) / "ProtocolOOT.exe"
+            exe.write_bytes(b"exe")
+            (data_local / "FAQ.txt").write_bytes(b"old")
+
+            manifest_path = share.parent / "manifest.json"
+            manifest = UpdateManifest(
+                latest_version="1.5.2",
+                windows=WindowsUpdatePayload(
+                    relative_path="ProtocolOOT.exe",
+                    sha256="00" * 32,
+                    size=3,
+                ),
+                data_files=[
+                    DataFilePayload(
+                        relative_path="data/FAQ.txt",
+                        sha256=digest,
+                        size=len(payload),
+                        policy="replace",
+                    )
+                ],
+            )
+            apply_data_updates(manifest_path, manifest, exe)
+            self.assertFalse(stale_bak.exists())
+
     def test_apply_data_updates_restores_backup_on_checksum_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
