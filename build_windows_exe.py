@@ -95,6 +95,9 @@ _PYI_HIDDEN = [
     "update_info",
     "version_compare",
     "changelog_dialog",
+    "pending_changelog",
+    "windows_app_bundle",
+    "update_success",
 ]
 
 # fpdf2 тянет fontTools; на Python 3.14 iup — бинарный .pyd, без collect/hidden-import exe падает при старте.
@@ -189,7 +192,13 @@ def _write_update_info(data_dir: Path) -> Path:
     return write_update_info(data_dir, version=version, released=date.today().isoformat())
 
 
-def _publish_update_share(*, exe: Path, data_dir: Path, share_root: Path) -> Path:
+def _publish_update_share(
+    *,
+    exe: Path,
+    data_dir: Path,
+    share_root: Path,
+    app_zip: Path | None = None,
+) -> Path:
     """Публикует exe + data/ на шару обновлений (windows/<версия>/…)."""
     if str(NEXT) not in sys.path:
         sys.path.insert(0, str(NEXT))
@@ -209,13 +218,24 @@ def _publish_update_share(*, exe: Path, data_dir: Path, share_root: Path) -> Pat
         mandatory=False,
         released=date.today().isoformat(),
         data_src_dir=data_dir,
+        app_zip=app_zip,
     )
 
 
-def _try_publish_deploy_update_share(*, exe: Path, data_dir: Path) -> Path | None:
+def _try_publish_deploy_update_share(
+    *,
+    exe: Path,
+    data_dir: Path,
+    app_zip: Path | None = None,
+) -> Path | None:
     """Публикует на D:\\Обновление\\windows\\<версия>/; при ошибке — предупреждение."""
     try:
-        return _publish_update_share(exe=exe, data_dir=data_dir, share_root=DEPLOY_UPDATE_SHARE_DIR)
+        return _publish_update_share(
+            exe=exe,
+            data_dir=data_dir,
+            share_root=DEPLOY_UPDATE_SHARE_DIR,
+            app_zip=app_zip,
+        )
     except (OSError, ValueError, SystemExit) as error:
         print(
             f"\nВнимание: не удалось опубликовать в {DEPLOY_UPDATE_SHARE_DIR}: {error}",
@@ -267,6 +287,7 @@ DIST_README = """Папка готовой сборки (onefile + компле�
 папки Protokol и Mintrud (рабочие данные — в корне, не в data/).
 
 Переносите на другой ПК всю папку: exe + data/ целиком.
+Избегайте символа «!» в пути к папке — он мешает перезапуску после обновления в Windows.
 В корне рядом с exe лежат копии Data_base.xlsx и Programs_base.xlsx (если были в исходниках при сборке).
 
 update_config.json — каталог шары обновлений (создаётся при первой сборке, если файла ещё нет;
@@ -321,6 +342,14 @@ def main() -> int:
     if _run_ruff_check() != 0:
         return 1
 
+    if sys.version_info >= (3, 14):
+        print(
+            "\nВНИМАНИЕ: сборка на Python 3.14+ — PyInstaller onefile может падать "
+            'с «Failed to load Python DLL» при перезапуске.\n'
+            "Рекомендуется: py -3.12 build_windows_exe.py …\n",
+            file=sys.stderr,
+        )
+
     if len(sys.argv) > 1:
         out_arg = " ".join(sys.argv[1:]).strip().strip('"')
         OUT_DIR = Path(out_arg).expanduser().resolve()
@@ -358,6 +387,8 @@ def main() -> int:
         args.append(f"--hidden-import={mod}")
     for pkg in _PYI_COLLECT_SUBMODULES:
         args.append(f"--collect-submodules={pkg}")
+    args.append("--collect-all=tkinter")
+    args.append(f"--runtime-hook={ROOT / 'tools' / 'pyi_rth_tkinter.py'}")
     try:
         import pymorphy2_dicts_ru  # noqa: F401
     except ImportError:

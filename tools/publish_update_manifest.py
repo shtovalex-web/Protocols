@@ -16,6 +16,7 @@ sys.path.insert(0, str(_NEXT))
 
 from update_bundle_files import DATA_REPLACE_FILENAMES, build_data_manifest_entries  # noqa: E402
 from update_manifest import sha256_file  # noqa: E402
+from windows_app_bundle import WINDOWS_APP_ZIP_NAME, resolve_windows_payload  # noqa: E402
 
 
 def _default_exe_name() -> str:
@@ -81,15 +82,15 @@ def _verify_file_entry(
 def _write_manifest(
     *,
     target_dir: Path,
-    target_exe: Path,
+    target_payload: Path,
     target_data: Path,
     version: str,
     changes: list[str],
     mandatory: bool,
     released: str,
 ) -> Path:
-    digest = sha256_file(target_exe)
-    size = target_exe.stat().st_size
+    digest = sha256_file(target_payload)
+    size = target_payload.stat().st_size
     data_entries = build_data_manifest_entries(
         data_src_dir=target_data,
         paths_relative_to_version_dir=True,
@@ -99,7 +100,7 @@ def _write_manifest(
         "released": released,
         "mandatory": mandatory,
         "windows": {
-            "relative_path": target_exe.name,
+            "relative_path": target_payload.name,
             "sha256": digest,
             "size": size,
         },
@@ -128,16 +129,16 @@ def refresh_manifest(
     mandatory: bool,
     released: str,
 ) -> Path:
-    """Пересобирает manifest.json по уже лежащим на шаре exe и data/ (без копирования)."""
+    """Пересобирает manifest.json по уже лежащим на шаре exe/zip и data/ (без копирования)."""
     target_dir = version_dir.expanduser().resolve()
-    target_exe = target_dir / _default_exe_name()
-    if not target_exe.is_file():
-        msg = f"EXE not found in version dir: {target_exe}"
+    target_payload = resolve_windows_payload(target_dir)
+    if not target_payload.is_file():
+        msg = f"Windows payload not found in version dir: {target_payload}"
         raise SystemExit(msg)
     target_data = target_dir / "data"
     manifest_path = _write_manifest(
         target_dir=target_dir,
-        target_exe=target_exe,
+        target_payload=target_payload,
         target_data=target_data,
         version=version,
         changes=changes,
@@ -157,6 +158,7 @@ def publish(
     mandatory: bool,
     released: str,
     data_src_dir: Path | None,
+    app_zip: Path | None = None,
 ) -> Path:
     if not exe_path.is_file():
         msg = f"EXE not found: {exe_path}"
@@ -166,6 +168,12 @@ def publish(
     target_dir.mkdir(parents=True, exist_ok=True)
     target_exe = target_dir / _default_exe_name()
     shutil.copy2(exe_path, target_exe)
+
+    if app_zip is not None and app_zip.is_file():
+        target_payload = target_dir / WINDOWS_APP_ZIP_NAME
+        shutil.copy2(app_zip, target_payload)
+    else:
+        target_payload = target_exe
 
     data_dir = (data_src_dir or exe_path.parent / "data").expanduser().resolve()
     target_data = target_dir / "data"
@@ -180,14 +188,14 @@ def publish(
 
     manifest_path = _write_manifest(
         target_dir=target_dir,
-        target_exe=target_exe,
+        target_payload=target_payload,
         target_data=target_data,
         version=version,
         changes=changes,
         mandatory=mandatory,
         released=released,
     )
-    print(f"Payload: {target_exe} ({target_exe.stat().st_size} bytes)")
+    print(f"Payload: {target_payload} ({target_payload.stat().st_size} bytes)")
     print(f"Data files: {copied_data} in {target_data}")
     return manifest_path
 

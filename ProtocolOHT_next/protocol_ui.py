@@ -350,6 +350,22 @@ class ProtocolApp(tk.Tk):
         )
         if journal_duplicates_removed > 0:
             self.after(400, lambda: self._maybe_notify_journal_purge(journal_duplicates_removed))
+        self.after(500, self._maybe_show_pending_changelog)
+
+    def _maybe_show_pending_changelog(self) -> None:
+        from changelog_dialog import show_changelog_dialog
+        from pending_changelog import pop_pending_changelog
+        from startup_update import current_exe_path
+        from update_info import data_dir_for_exe
+
+        exe = current_exe_path()
+        if exe is None:
+            return
+        pending = pop_pending_changelog(data_dir_for_exe(exe))
+        if pending is None:
+            return
+        version, changes = pending
+        show_changelog_dialog(version, changes, parent=self)
 
     def _maybe_notify_journal_purge(self, removed: int) -> None:
         if removed <= 0:
