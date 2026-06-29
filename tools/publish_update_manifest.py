@@ -211,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         "--share-root",
         type=Path,
         required=True,
-        help=r"Корень шары, напр. \\SERVER\SOFT\ProtocolOOT",
+        help=r"Корень шары, напр. \\tn.tngrp.ru\df\AK\SHR\Distr_О_О\Шитов Алексей Александрович",
     )
     parser.add_argument(
         "--data-dir",

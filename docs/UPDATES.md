@@ -39,7 +39,7 @@ py -3.12 build_windows_exe.py "D:\Путь\к\папке\Windows"
 
 | Что | Значение |
 |-----|----------|
-| Каталог шары (прод) | `\\SERVER\SOFT\ProtocolOOT` |
+| Каталог шары (прод) | `\\tn.tngrp.ru\df\AK\SHR\Distr_О_О\Шитов Алексей Александрович` |
 | Локальная тестовая шара | `D:\Обновление` |
 | Локальный конфиг | `update_config.json` рядом с `.exe` / в корне проекта |
 | Пример манифеста | `docs/update_manifest.example.json` |
@@ -48,7 +48,7 @@ py -3.12 build_windows_exe.py "D:\Путь\к\папке\Windows"
 
 ```json
 {
-  "manifest_path": "//SERVER/SOFT/ProtocolOOT",
+  "manifest_path": "//tn.tngrp.ru/df/AK/SHR/Distr_О_О/Шитов Алексей Александрович",
   "enabled": true
 }
 ```
@@ -76,7 +76,7 @@ py -3.12 build_windows_exe.py "D:\Путь\к\папке\Windows"
 Структура шары:
 
 ```text
-\\SERVER\SOFT\ProtocolOOT\
+\\tn.tngrp.ru\df\AK\SHR\Distr_О_О\Шитов Алексей Александрович\
   windows\
     1.5.3\
       manifest.json
@@ -95,7 +95,7 @@ py -3.12 build_windows_exe.py "D:\Путь\к\папке\Windows"
 py -3.12 tools/publish_update_manifest.py ^
   --exe "D:\ProtocolOHT_onefile\ProtocolOOT.exe" ^
   --version 1.5.3 ^
-  --share-root "\\SERVER\SOFT\ProtocolOOT" ^
+  --share-root "\\tn.tngrp.ru\df\AK\SHR\Distr_О_О\Шитов Алексей Александрович" ^
   --change "Краткое описание изменения"
 ```
 

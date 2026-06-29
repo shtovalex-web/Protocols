@@ -22,6 +22,10 @@ class TestDesktopUpdaterConfig(unittest.TestCase):
         self.assertEqual(cfg.exe_name, "ProtocolOOT.exe")
         self.assertEqual(cfg.env_manifest, "PROTOCOLOOT_UPDATE_MANIFEST")
         self.assertEqual(cfg.resolved_app_bundle_zip_name, "ProtocolOOT_app.zip")
+        self.assertEqual(
+            cfg.default_share_root,
+            Path(r"\\tn.tngrp.ru\df\AK\SHR\Distr_О_О\Шитов Алексей Александрович"),
+        )
 
     def test_configure_custom_app(self) -> None:
         previous = try_get_config()

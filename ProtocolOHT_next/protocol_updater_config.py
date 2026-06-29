@@ -16,6 +16,10 @@ from protocol_app_info import APP_VERSION
 
 DATA_SUBDIR_NAME = "data"
 
+DEFAULT_UPDATE_SHARE_UNC = Path(
+    r"\\tn.tngrp.ru\df\AK\SHR\Distr_О_О\Шитов Алексей Александрович"
+)
+
 DATA_REPLACE_FILENAMES: tuple[str, ...] = (
     "default_protocol.docx",
     "default_protocol_tehnicheskiy.docx",
@@ -35,7 +39,7 @@ configure(
         exe_name="ProtocolOOT.exe",
         linux_exe_name="ProtocolOOT",
         app_version=APP_VERSION,
-        default_share_root=Path(r"\\SERVER\SOFT\ProtocolOOT"),
+        default_share_root=DEFAULT_UPDATE_SHARE_UNC,
         env_prefix="PROTOCOLOOT",
         data_subdir=DATA_SUBDIR_NAME,
         data_replace_filenames=DATA_REPLACE_FILENAMES,
