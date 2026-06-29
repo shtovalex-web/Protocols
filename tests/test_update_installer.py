@@ -66,7 +66,7 @@ class TestUpdateInstaller(unittest.TestCase):
                 self.assertFalse(cleanup_backup_exe(current))
             self.assertTrue(backup.is_file())
 
-    def test_launch_updated_exe_uses_cmd_start_on_windows(self) -> None:
+    def test_launch_updated_exe_starts_detached_process_on_windows(self) -> None:
         from update_installer import launch_updated_exe
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -78,9 +78,24 @@ class TestUpdateInstaller(unittest.TestCase):
                     launch_updated_exe(exe, show_changelog=True, version="1.6.1")
             popen.assert_called_once()
             cmd = popen.call_args.args[0]
-            self.assertEqual(cmd[0:3], ["cmd", "/c", "start"])
-            self.assertIn(str(exe.resolve()), cmd)
-            self.assertIn("--show-changelog=1.6.1", cmd)
+            self.assertEqual(cmd[0], str(exe.resolve()))
+            self.assertEqual(cmd[1], "--show-changelog=1.6.1")
+            flags = popen.call_args.kwargs.get("creationflags", 0)
+            self.assertNotEqual(flags, 0)
+
+    def test_launch_updated_exe_handles_path_with_spaces_and_bang(self) -> None:
+        from update_installer import launch_updated_exe
+
+        with tempfile.TemporaryDirectory(prefix="test path_") as tmp:
+            root = Path(tmp) / "!folder name"
+            root.mkdir(parents=True)
+            exe = root / "ProtocolOOT.exe"
+            exe.write_bytes(b"exe")
+            with patch("update_installer.sys.platform", "win32"):
+                with patch("update_installer.subprocess.Popen") as popen:
+                    launch_updated_exe(exe, show_changelog=False, version="1.6.1")
+            cmd = popen.call_args.args[0]
+            self.assertEqual(cmd[0], str(exe.resolve()))
 
 
 if __name__ == "__main__":

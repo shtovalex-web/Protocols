@@ -206,7 +206,15 @@ def _run_update_check(*, force: bool, parent=None) -> bool:
 
 def check_updates_interactive(parent=None) -> None:
     """Ручная проверка из меню «Справка»."""
-    _run_update_check(force=True, parent=parent)
+    if _run_update_check(force=True, parent=parent):
+        return
+    # _perform_update уже вызывает exit_for_update_restart(); запасной выход из меню.
+    if parent is not None:
+        try:
+            parent.quit()
+        except Exception:
+            pass
+    exit_for_update_restart()
 
 
 def prepare_startup_updates(argv: list[str]) -> bool:

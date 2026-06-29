@@ -109,19 +109,28 @@ def cleanup_backup_exe(exe_path: Path) -> bool:
     return _unlink_with_retries(backup)
 
 
+def _windows_detached_creationflags() -> int:
+    """Отдельный процесс GUI без привязки к onefile-родителю."""
+    flags = 0
+    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    if hasattr(subprocess, "DETACHED_PROCESS"):
+        flags |= subprocess.DETACHED_PROCESS
+    return flags
+
+
 def launch_updated_exe(exe_path: Path, *, show_changelog: bool, version: str) -> None:
     args = [str(exe_path.resolve())]
     if show_changelog:
         args.append(f"--show-changelog={version}")
     cwd = str(exe_path.parent)
     if sys.platform == "win32":
-        # start через cmd — потомок не связан с onefile-родителем, меньше гонок с _MEI*.
-        launch_cmd = ["cmd", "/c", "start", "", *args]
+        # Прямой запуск exe (без cmd start): пути с пробелами и «!» иначе ломаются.
         subprocess.Popen(
-            launch_cmd,
+            args,
             cwd=cwd,
             close_fds=True,
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            creationflags=_windows_detached_creationflags(),
         )
         return
     subprocess.Popen(args, close_fds=True, cwd=cwd)
