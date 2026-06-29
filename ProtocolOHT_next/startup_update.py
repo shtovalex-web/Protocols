@@ -102,6 +102,7 @@ def _ask_install_update(
     lines.append("")
     lines.append("Будут обновлены программа и файлы в папке data/ (шаблоны, справка).")
     lines.append("Файлы в корне папки (базы, protocols.db) не изменяются.")
+    lines.append("Перед установкой закройте Word и документы из data/.")
     lines.append("")
     lines.append("Установить обновление сейчас?")
     text = "\n".join(lines)
