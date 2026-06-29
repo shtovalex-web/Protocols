@@ -66,7 +66,7 @@ class TestUpdateInstaller(unittest.TestCase):
                 self.assertFalse(cleanup_backup_exe(current))
             self.assertTrue(backup.is_file())
 
-    def test_launch_updated_exe_starts_detached_process_on_windows(self) -> None:
+    def test_launch_updated_exe_uses_shell_execute_on_windows(self) -> None:
         from update_installer import launch_updated_exe
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -74,28 +74,37 @@ class TestUpdateInstaller(unittest.TestCase):
             exe = root / "ProtocolOOT.exe"
             exe.write_bytes(b"exe")
             with patch("update_installer.sys.platform", "win32"):
-                with patch("update_installer.subprocess.Popen") as popen:
+                with patch("update_installer._launch_updated_exe_windows", return_value=True) as shell:
                     launch_updated_exe(exe, show_changelog=True, version="1.6.1")
-            popen.assert_called_once()
-            cmd = popen.call_args.args[0]
-            self.assertEqual(cmd[0], str(exe.resolve()))
-            self.assertEqual(cmd[1], "--show-changelog=1.6.1")
-            flags = popen.call_args.kwargs.get("creationflags", 0)
-            self.assertNotEqual(flags, 0)
+            shell.assert_called_once()
+            kwargs = shell.call_args.kwargs
+            self.assertEqual(kwargs["params"], "--show-changelog=1.6.1")
+
+    def test_launch_updated_exe_falls_back_to_subprocess(self) -> None:
+        from update_installer import launch_updated_exe
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "ProtocolOOT.exe"
+            exe.write_bytes(b"exe")
+            with patch("update_installer.sys.platform", "win32"):
+                with patch("update_installer._launch_updated_exe_windows", return_value=False):
+                    with patch("update_installer._launch_updated_exe_subprocess") as sub:
+                        launch_updated_exe(exe, show_changelog=False, version="1.6.1")
+            sub.assert_called_once()
 
     def test_launch_updated_exe_handles_path_with_spaces_and_bang(self) -> None:
-        from update_installer import launch_updated_exe
+        from update_installer import _launch_updated_exe_subprocess
 
         with tempfile.TemporaryDirectory(prefix="test path_") as tmp:
             root = Path(tmp) / "!folder name"
             root.mkdir(parents=True)
             exe = root / "ProtocolOOT.exe"
             exe.write_bytes(b"exe")
-            with patch("update_installer.sys.platform", "win32"):
-                with patch("update_installer.subprocess.Popen") as popen:
-                    launch_updated_exe(exe, show_changelog=False, version="1.6.1")
+            with patch("update_installer.subprocess.Popen") as popen:
+                _launch_updated_exe_subprocess(exe, params="", cwd=str(root))
             cmd = popen.call_args.args[0]
-            self.assertEqual(cmd[0], str(exe.resolve()))
+            self.assertEqual(cmd[0], str(exe))
 
 
 if __name__ == "__main__":

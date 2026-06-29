@@ -111,7 +111,19 @@ def _ask_install_update(
     return messagebox.askyesno("Обновление программы", text, parent=parent)
 
 
-def _perform_update(manifest_path: Path, manifest, exe_path: Path) -> None:
+def _quit_ui_before_restart(parent) -> None:
+    if parent is None:
+        return
+    try:
+        top = parent.winfo_toplevel()
+        top.withdraw()
+        top.update_idletasks()
+        top.update()
+    except Exception:
+        pass
+
+
+def _perform_update(manifest_path: Path, manifest, exe_path: Path, *, parent=None) -> None:
     source = manifest.windows_payload_path(manifest_path)
     stage_payload_copy(
         source,
@@ -122,6 +134,7 @@ def _perform_update(manifest_path: Path, manifest, exe_path: Path) -> None:
     apply_data_updates(manifest_path, manifest, exe_path)
     mark_data_version_installed(exe_path, manifest)
     swap_exe_via_rename(exe_path)
+    _quit_ui_before_restart(parent)
     launch_updated_exe(
         exe_path,
         show_changelog=True,
@@ -191,7 +204,7 @@ def _run_update_check(*, force: bool, parent=None) -> bool:
         return True
 
     try:
-        _perform_update(manifest_path, manifest, exe_path)
+        _perform_update(manifest_path, manifest, exe_path, parent=parent)
     except (UpdateInstallerError, OSError) as error:
         messagebox.showerror(
             "Обновление",

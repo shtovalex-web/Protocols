@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8
 """Установка обновления: копия с шары и замена .exe через rename."""
 
 from __future__ import annotations
@@ -11,6 +11,10 @@ import time
 from pathlib import Path
 
 from update_manifest import sha256_file
+
+# ShellExecuteW: > 32 — успех, иначе код ошибки Windows.
+_SHELL_EXECUTE_SUCCESS_MIN = 32
+_SW_SHOWNORMAL = 1
 
 
 class UpdateInstallerError(Exception):
@@ -109,35 +113,54 @@ def cleanup_backup_exe(exe_path: Path) -> bool:
     return _unlink_with_retries(backup)
 
 
-def _windows_detached_creationflags() -> int:
-    """Отдельный процесс GUI без привязки к onefile-родителю."""
-    flags = 0
-    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-        flags |= subprocess.CREATE_NEW_PROCESS_GROUP
-    if hasattr(subprocess, "DETACHED_PROCESS"):
-        flags |= subprocess.DETACHED_PROCESS
-    return flags
+def _launch_updated_exe_windows(exe_path: Path, *, params: str, cwd: str) -> bool:
+    """ShellExecuteW — корректные пути с пробелами и «!»; True при успехе."""
+    import ctypes
+
+    result = int(
+        ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "open",
+            str(exe_path),
+            params or None,
+            cwd,
+            _SW_SHOWNORMAL,
+        )
+    )
+    return result > _SHELL_EXECUTE_SUCCESS_MIN
+
+
+def _launch_updated_exe_subprocess(exe_path: Path, *, params: str, cwd: str) -> None:
+    args = [str(exe_path)]
+    if params:
+        args.append(params)
+    subprocess.Popen(
+        args,
+        cwd=cwd,
+        close_fds=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def launch_updated_exe(exe_path: Path, *, show_changelog: bool, version: str) -> None:
-    args = [str(exe_path.resolve())]
-    if show_changelog:
-        args.append(f"--show-changelog={version}")
-    cwd = str(exe_path.parent)
+    resolved = exe_path.resolve()
+    params = f"--show-changelog={version}" if show_changelog else ""
+    cwd = str(resolved.parent)
     if sys.platform == "win32":
-        # Прямой запуск exe (без cmd start): пути с пробелами и «!» иначе ломаются.
-        subprocess.Popen(
-            args,
-            cwd=cwd,
-            close_fds=True,
-            creationflags=_windows_detached_creationflags(),
-        )
+        if _launch_updated_exe_windows(resolved, params=params, cwd=cwd):
+            return
+        _launch_updated_exe_subprocess(resolved, params=params, cwd=cwd)
         return
+    args = [str(resolved)]
+    if params:
+        args.append(params)
     subprocess.Popen(args, close_fds=True, cwd=cwd)
 
 
 def exit_for_update_restart() -> None:
     if sys.platform == "win32":
-        time.sleep(1.0)
+        time.sleep(2.0)
         os._exit(0)
     sys.exit(0)
