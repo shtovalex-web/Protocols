@@ -12,7 +12,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 _NEXT = ROOT / "ProtocolOHT_next"
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(_NEXT))
+
+import protocol_updater_config  # noqa: E402, F401
 
 from update_bundle_files import DATA_REPLACE_FILENAMES, build_data_manifest_entries  # noqa: E402
 from update_manifest import sha256_file  # noqa: E402

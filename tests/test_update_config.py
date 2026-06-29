@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 _NEXT = ROOT / "ProtocolOHT_next"
 sys.path.insert(0, str(_NEXT))
 
+from _bootstrap import setup_main_project_paths
+
+setup_main_project_paths()
+
 from update_config import (  # noqa: E402
     UpdateConfig,
     format_manifest_path_for_json,

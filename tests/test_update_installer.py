@@ -73,8 +73,11 @@ class TestUpdateInstaller(unittest.TestCase):
             root = Path(tmp)
             exe = root / "ProtocolOOT.exe"
             exe.write_bytes(b"exe")
-            with patch("update_installer.sys.platform", "win32"):
-                with patch("update_installer._launch_updated_exe_cmd_helper", return_value=True) as helper:
+            with patch("desktop_updater.installer.sys.platform", "win32"):
+                with patch(
+                    "desktop_updater.installer._launch_updated_exe_cmd_helper",
+                    return_value=True,
+                ) as helper:
                     launch_updated_exe(exe)
             helper.assert_called_once()
 
@@ -104,9 +107,9 @@ class TestUpdateInstaller(unittest.TestCase):
             root = Path(tmp)
             exe = root / "ProtocolOOT.exe"
             exe.write_bytes(b"exe")
-            with patch("update_installer.sys.platform", "win32"):
-                with patch("update_installer._launch_updated_exe_cmd_helper", return_value=False):
-                    with patch("update_installer._launch_updated_exe_windows", return_value=True) as shell:
+            with patch("desktop_updater.installer.sys.platform", "win32"):
+                with patch("desktop_updater.installer._launch_updated_exe_cmd_helper", return_value=False):
+                    with patch("desktop_updater.installer._launch_updated_exe_windows", return_value=True) as shell:
                         launch_updated_exe(exe)
             shell.assert_called_once()
 
@@ -117,10 +120,10 @@ class TestUpdateInstaller(unittest.TestCase):
             root = Path(tmp)
             exe = root / "ProtocolOOT.exe"
             exe.write_bytes(b"exe")
-            with patch("update_installer.sys.platform", "win32"):
-                with patch("update_installer._launch_updated_exe_cmd_helper", return_value=False):
-                    with patch("update_installer._launch_updated_exe_windows", return_value=False):
-                        with patch("update_installer._launch_updated_exe_subprocess") as sub:
+            with patch("desktop_updater.installer.sys.platform", "win32"):
+                with patch("desktop_updater.installer._launch_updated_exe_cmd_helper", return_value=False):
+                    with patch("desktop_updater.installer._launch_updated_exe_windows", return_value=False):
+                        with patch("desktop_updater.installer._launch_updated_exe_subprocess") as sub:
                             launch_updated_exe(exe)
             sub.assert_called_once()
 
@@ -132,7 +135,7 @@ class TestUpdateInstaller(unittest.TestCase):
             root.mkdir(parents=True)
             exe = root / "ProtocolOOT.exe"
             exe.write_bytes(b"exe")
-            with patch("update_installer.subprocess.Popen") as popen:
+            with patch("desktop_updater.installer.subprocess.Popen") as popen:
                 _launch_updated_exe_subprocess(exe, cwd=str(root))
             cmd = popen.call_args.args[0]
             self.assertEqual(cmd[0], str(exe))

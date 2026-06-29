@@ -167,3 +167,5 @@ py -3.12 tools/scan_update_share.py
 ## Ограничения
 
 - Только **Windows .exe** + **`data/`**; Linux — позже.
+
+Пакет **`desktop_updater/`** и подключение в других проектах — см. **`docs/DESKTOP_UPDATER.md`**.

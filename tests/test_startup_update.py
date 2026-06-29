@@ -17,7 +17,7 @@ from startup_update import app_version, prepare_startup_updates  # noqa: E402
 
 class TestStartupUpdate(unittest.TestCase):
     def test_prepare_startup_updates_skips_when_not_frozen(self) -> None:
-        with patch("startup_update.is_frozen", return_value=False):
+        with patch("desktop_updater.startup.is_frozen", return_value=False):
             with patch.dict("os.environ", {}, clear=False):
                 import os
 
@@ -35,7 +35,7 @@ class TestStartupUpdate(unittest.TestCase):
             )
             exe = root / "ProtocolOOT.exe"
             exe.write_bytes(b"stub")
-            with patch("startup_update.current_exe_path", return_value=exe):
+            with patch("desktop_updater.startup.current_exe_path", return_value=exe):
                 self.assertEqual(app_version(), "9.9.9")
 
     def test_prepare_startup_updates_no_manifest_is_silent(self) -> None:
@@ -45,7 +45,7 @@ class TestStartupUpdate(unittest.TestCase):
                 "PROTOCOLOOT_UPDATE_CHECK": "1",
                 "PROTOCOLOOT_UPDATE_MANIFEST": str(missing),
             }
-            with patch("startup_update.is_frozen", return_value=True):
+            with patch("desktop_updater.startup.is_frozen", return_value=True):
                 with patch.dict("os.environ", env, clear=False):
                     self.assertTrue(prepare_startup_updates(["app"]))
 

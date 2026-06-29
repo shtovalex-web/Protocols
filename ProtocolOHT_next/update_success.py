@@ -1,39 +1,9 @@
-# -*- coding: utf-8 -*-
-"""Уведомление об успешном обновлении и выход без автоперезапуска."""
-
-from __future__ import annotations
-
-from pathlib import Path
+# -*- coding: utf-8
+"""Обратная совместимость: update_success → desktop_updater."""
 
 from tkinter import messagebox
 
-from update_installer import exit_after_update
+import protocol_updater_config  # noqa: F401
 
-
-def notify_update_success_and_exit(
-    *,
-    version: str,
-    exe_path: Path,
-    parent=None,
-    bundle_staged: bool = False,
-) -> None:
-    exe_name = exe_path.name
-    if bundle_staged:
-        restart_lines = (
-            f"Закройте программу и снова запустите {exe_name}.\n"
-            "При следующем запуске файлы программы будут заменены."
-        )
-    else:
-        restart_lines = f"Закройте программу и снова запустите {exe_name}."
-    messagebox.showinfo(
-        "Обновление",
-        f"Обновление до версии {version} прошло успешно.\n\n{restart_lines}",
-        parent=parent,
-    )
-    if parent is not None:
-        try:
-            top = parent.winfo_toplevel()
-            top.quit()
-        except Exception:
-            pass
-    exit_after_update()
+from desktop_updater.installer import exit_after_update  # noqa: F401
+from desktop_updater.success import notify_update_success_and_exit  # noqa: F401

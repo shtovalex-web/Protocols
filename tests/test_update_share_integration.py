@@ -37,14 +37,14 @@ class TestUpdateShareIntegration(unittest.TestCase):
             self.assertIn("Доступна новая версия", text)
             return False
 
-        with patch("startup_update.is_frozen", return_value=True):
-            with patch("startup_update.current_exe_path", return_value=EXE_PATH):
-                with patch("startup_update.app_version", return_value="1.5.1"):
-                    with patch("startup_update.load_update_config") as load_cfg:
+        with patch("desktop_updater.startup.is_frozen", return_value=True):
+            with patch("desktop_updater.startup.current_exe_path", return_value=EXE_PATH):
+                with patch("desktop_updater.startup.app_version", return_value="1.5.1"):
+                    with patch("desktop_updater.startup.load_update_config") as load_cfg:
                         from update_config import UpdateConfig
 
                         load_cfg.return_value = UpdateConfig(manifest_path=SHARE_MANIFEST)
-                        with patch("startup_update.messagebox.askyesno", side_effect=_ask_yesno):
+                        with patch("desktop_updater.startup.messagebox.askyesno", side_effect=_ask_yesno):
                             self.assertTrue(prepare_startup_updates([str(EXE_PATH)]))
         self.assertTrue(asked, "диалог обновления не был показан")
 

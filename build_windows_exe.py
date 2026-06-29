@@ -98,6 +98,22 @@ _PYI_HIDDEN = [
     "pending_changelog",
     "windows_app_bundle",
     "update_success",
+    "protocol_updater_config",
+    "desktop_updater",
+    "desktop_updater.config",
+    "desktop_updater.registry",
+    "desktop_updater.client_config",
+    "desktop_updater.manifest",
+    "desktop_updater.scan",
+    "desktop_updater.installer",
+    "desktop_updater.data_installer",
+    "desktop_updater.info",
+    "desktop_updater.bundle_files",
+    "desktop_updater.version_compare",
+    "desktop_updater.pending_changelog",
+    "desktop_updater.success",
+    "desktop_updater.startup",
+    "desktop_updater.windows_app_bundle",
 ]
 
 # fpdf2 тянет fontTools; на Python 3.14 iup — бинарный .pyd, без collect/hidden-import exe падает при старте.
