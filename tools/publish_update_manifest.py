@@ -15,6 +15,7 @@ _NEXT = ROOT / "ProtocolOHT_next"
 sys.path.insert(0, str(_NEXT))
 
 from update_bundle_files import DATA_REPLACE_FILENAMES, build_data_manifest_entries  # noqa: E402
+from update_info import write_update_info  # noqa: E402
 from update_manifest import sha256_file  # noqa: E402
 
 
@@ -45,6 +46,7 @@ def publish(
     size = target_exe.stat().st_size
 
     data_dir = (data_src_dir or exe_path.parent / "data").expanduser().resolve()
+    write_update_info(data_dir, version=version, released=released)
     target_data = target_dir / "data"
     copied_data = 0
     for name in DATA_REPLACE_FILENAMES:

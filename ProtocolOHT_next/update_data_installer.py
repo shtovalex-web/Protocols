@@ -8,6 +8,7 @@ from pathlib import Path
 
 from update_bundle_files import DATA_POLICY_REPLACE, DATA_SUBDIR_NAME
 from update_installer import UpdateInstallerError, stage_payload_copy
+from update_info import write_update_info
 from update_manifest import DataFilePayload, UpdateManifest
 
 
@@ -46,6 +47,15 @@ def _restore_data_backup(exe_path: Path) -> None:
     if dest.exists():
         shutil.rmtree(dest)
     shutil.copytree(backup, dest)
+
+
+def mark_data_version_installed(exe_path: Path, manifest: UpdateManifest) -> None:
+    """Обновляет data/update_info.json после успешной установки релиза."""
+    write_update_info(
+        data_dir_for_exe(exe_path),
+        version=manifest.latest_version,
+        released=manifest.released or None,
+    )
 
 
 def apply_data_updates(

@@ -52,7 +52,7 @@ _EMPLOYEES_XLSX = "Data_base.xlsx"
 _PROGRAMS_XLSX = "Programs_base.xlsx"
 NEXT = ROOT / "ProtocolOHT_next"
 DEFAULT_OUT_DIR = ROOT / "ProtocolOHT_onefile"
-LOCAL_UPDATE_SHARE_DIR = ROOT / "UPDATE"
+DEPLOY_UPDATE_SHARE_DIR = Path(r"D:\Обновление")
 EXE_NAME = "ProtocolOOT"
 WORK = ROOT / "_pyinstaller_build_onefile"
 
@@ -92,6 +92,7 @@ _PYI_HIDDEN = [
     "update_scan",
     "update_bundle_files",
     "update_data_installer",
+    "update_info",
     "version_compare",
     "changelog_dialog",
 ]
@@ -150,7 +151,7 @@ def _ensure_update_config(out_dir: Path, *, share_root: Path | None = None) -> b
     target_share = share_root
     if target_share is None:
         target_share = (
-            LOCAL_UPDATE_SHARE_DIR
+            DEPLOY_UPDATE_SHARE_DIR
             if out_dir.resolve() == DEFAULT_OUT_DIR.resolve()
             else DEFAULT_UPDATE_SHARE_ROOT
         )
@@ -174,27 +175,53 @@ def _load_publish_module():
     return mod
 
 
-def _publish_local_update_share(*, exe: Path, data_dir: Path) -> Path:
-    """Публикует exe + data/ в каталог UPDATE/ (локальная шара для проверки обновлений)."""
+def _write_update_info(data_dir: Path) -> Path:
+    """Записывает data/update_info.json с версией текущей сборки."""
+    if str(NEXT) not in sys.path:
+        sys.path.insert(0, str(NEXT))
+    from protocol_app_info import APP_VERSION
+    from update_info import write_update_info
+
+    version = (APP_VERSION or "").strip()
+    if not version:
+        msg = "APP_VERSION пуст — не удалось записать update_info.json"
+        raise ValueError(msg)
+    return write_update_info(data_dir, version=version, released=date.today().isoformat())
+
+
+def _publish_update_share(*, exe: Path, data_dir: Path, share_root: Path) -> Path:
+    """Публикует exe + data/ на шару обновлений (windows/<версия>/…)."""
     if str(NEXT) not in sys.path:
         sys.path.insert(0, str(NEXT))
     from protocol_app_info import APP_VERSION
 
     version = (APP_VERSION or "").strip()
     if not version:
-        msg = "APP_VERSION пуст — не удалось опубликовать в UPDATE/"
+        msg = f"APP_VERSION пуст — не удалось опубликовать в {share_root}"
         raise ValueError(msg)
-    LOCAL_UPDATE_SHARE_DIR.mkdir(parents=True, exist_ok=True)
+    share_root.mkdir(parents=True, exist_ok=True)
     publish = _load_publish_module().publish
     return publish(
         exe_path=exe,
         version=version,
-        share_root=LOCAL_UPDATE_SHARE_DIR,
+        share_root=share_root,
         changes=[f"Сборка {version}"],
         mandatory=False,
         released=date.today().isoformat(),
         data_src_dir=data_dir,
     )
+
+
+def _try_publish_deploy_update_share(*, exe: Path, data_dir: Path) -> Path | None:
+    """Публикует на D:\\Обновление\\windows\\<версия>/; при ошибке — предупреждение."""
+    try:
+        return _publish_update_share(exe=exe, data_dir=data_dir, share_root=DEPLOY_UPDATE_SHARE_DIR)
+    except (OSError, ValueError, SystemExit) as error:
+        print(
+            f"\nВнимание: не удалось опубликовать в {DEPLOY_UPDATE_SHARE_DIR}: {error}",
+            file=sys.stderr,
+        )
+        return None
 
 
 def _pick_output_dir_interactive() -> Path | None:
@@ -246,9 +273,9 @@ update_config.json — каталог шары обновлений (созда�
 существующий не перезаписывается). Без файла — \\\\SERVER\\SOFT\\ProtocolOOT из кода программы.
 
 manifest.json рядом с exe здесь не создаётся: он лежит на шаре в windows/<версия>/manifest.json.
-После сборки комплект для обновления копируется в каталог UPDATE/ в корне проекта
-(публикация tools/publish_update_manifest.py). Для ProtocolOHT_onefile update_config.json
-по умолчанию указывает на UPDATE/ (если файла ещё нет).
+После сборки комплект для обновления публикуется на шару (D:\\Обновление или \\\\SERVER\\…).
+В data/ записывается update_info.json — маркер версии комплекта шаблонов и справки.
+Для ProtocolOHT_onefile update_config.json по умолчанию указывает на D:/Обновление (если файла ещё нет).
 
 Для PDF с оформлением Word на целевом ПК нужны Microsoft Word и регистрация COM (pywin32 входит в сборку exe).
 """
@@ -384,23 +411,27 @@ def main() -> int:
 
     (OUT_DIR / "ИНСТРУКЦИЯ_папки_сборки.txt").write_text(DIST_README, encoding="utf-8")
     dev_build = OUT_DIR.resolve() == DEFAULT_OUT_DIR.resolve()
+    try:
+        update_info_path = _write_update_info(data_dir)
+    except (OSError, ValueError) as error:
+        print(f"\nВнимание: не удалось записать update_info.json: {error}", file=sys.stderr)
+        return 1
+
     _ensure_update_config(
         OUT_DIR,
-        share_root=LOCAL_UPDATE_SHARE_DIR if dev_build else None,
+        share_root=DEPLOY_UPDATE_SHARE_DIR if dev_build else None,
     )
 
-    try:
-        manifest_path = _publish_local_update_share(exe=exe, data_dir=data_dir)
-    except (OSError, ValueError) as error:
-        print(f"\nВнимание: не удалось опубликовать в {LOCAL_UPDATE_SHARE_DIR.name}/: {error}", file=sys.stderr)
-        return 1
+    deploy_manifest = _try_publish_deploy_update_share(exe=exe, data_dir=data_dir)
 
     print()
     print("Сборка завершена.")
     print(f"  {exe}")
     print(f"  Комплект в {data_dir.name}/: {copied} файл(ов)")
-    print(f"  Локальная шара: {LOCAL_UPDATE_SHARE_DIR}")
-    print(f"  manifest: {manifest_path}")
+    print(f"  Маркер версии: {update_info_path}")
+    if deploy_manifest is not None:
+        print(f"  Шара обновлений: {DEPLOY_UPDATE_SHARE_DIR}")
+        print(f"  manifest: {deploy_manifest}")
     if copy_failures:
         print(
             f"\nВнимание: не скопированы {len(copy_failures)} файл(ов): "

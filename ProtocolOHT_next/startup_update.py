@@ -12,7 +12,7 @@ from tkinter import messagebox
 from changelog_dialog import show_changelog_dialog
 from protocol_app_info import APP_VERSION
 from update_config import ENV_FORCE_CHECK, load_update_config, resolve_update_share_root
-from update_data_installer import apply_data_updates
+from update_data_installer import apply_data_updates, mark_data_version_installed
 from update_installer import (
     UpdateInstallerError,
     cleanup_backup_exe,
@@ -52,6 +52,13 @@ def current_exe_path() -> Path | None:
 
 
 def app_version() -> str:
+    exe = current_exe_path()
+    if exe is not None:
+        from update_info import installed_version_from_data
+
+        data_version = installed_version_from_data(exe)
+        if data_version:
+            return data_version
     return (APP_VERSION or "").strip()
 
 
@@ -112,6 +119,7 @@ def _perform_update(manifest_path: Path, manifest, exe_path: Path) -> None:
         expected_size=manifest.windows.size,
     )
     apply_data_updates(manifest_path, manifest, exe_path)
+    mark_data_version_installed(exe_path, manifest)
     swap_exe_via_rename(exe_path)
     launch_updated_exe(
         exe_path,

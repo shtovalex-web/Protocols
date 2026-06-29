@@ -122,9 +122,13 @@ py -3 tools/scan_update_share.py
 
 `scan_update_share.py` — список всех версий на шаре и рекомендуемое обновление.
 
-При **`py -3 build_windows_exe.py`** (сборка в `ProtocolOHT_onefile/`) комплект обновления автоматически
-публикуется в **`UPDATE/`** в корне проекта (`UPDATE/windows/<версия>/…`). Для onefile `update_config.json`
-при первой сборке указывает на `UPDATE/`.
+При **`py -3 build_windows_exe.py`** (или **`build_windows_exe.bat`**) после сборки:
+
+1. В **`data/`** записывается **`update_info.json`** — маркер версии комплекта (см. `docs/update_info.example.json`).
+2. Комлект обновления публикуется на **`D:\Обновление`** в **`windows/<версия>/…`** (Linux — `linux/<версия>/…` позже).
+3. Для `ProtocolOHT_onefile` при первой сборке **`update_config.json`** указывает на **`D:/Обновление`**.
+
+Локальная папка **`UPDATE/`** в репозитории **не используется**.
 
 Публикация тестового обновления вручную:
 
@@ -149,11 +153,13 @@ py -3 tools/publish_update_manifest.py ^
 
 - `default_protocol.docx`, `default_protocol_tehnicheskiy.docx`
 - инструкции `.docx`, `FAQ.txt`, `ЖУРНАЛ_ДОРАБОТОК.md`
-- шаблоны Минтруд XSD (`.xlsx`), `icon.ico`
+- шаблоны Минтруд XSD (`.xlsx`), `icon.ico`, **`update_info.json`**
 
 **Не обновляются:** `protocols.db`, Excel в **корне**, `Protokol/`, `Mintrud/`, `update_config.json`.
 
 Перед заменой создаётся **`data.backup/`**. В `manifest.json` — секция **`data_files`**.
+
+После успешного обновления перезаписывается **`data/update_info.json`** (версия комплекта `data/`).
 
 ## Ограничения
 

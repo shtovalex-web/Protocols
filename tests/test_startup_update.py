@@ -12,7 +12,7 @@ from _bootstrap import setup_main_project_paths
 
 setup_main_project_paths()
 
-from startup_update import prepare_startup_updates  # noqa: E402
+from startup_update import app_version, prepare_startup_updates  # noqa: E402
 
 
 class TestStartupUpdate(unittest.TestCase):
@@ -23,6 +23,20 @@ class TestStartupUpdate(unittest.TestCase):
 
                 os.environ.pop("PROTOCOLOOT_UPDATE_CHECK", None)
                 self.assertTrue(prepare_startup_updates(["app"]))
+
+    def test_app_version_reads_update_info_for_frozen_exe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = root / "data"
+            data_dir.mkdir()
+            (data_dir / "update_info.json").write_text(
+                '{"version": "9.9.9", "released": "2026-01-01", "platform": "windows"}\n',
+                encoding="utf-8",
+            )
+            exe = root / "ProtocolOOT.exe"
+            exe.write_bytes(b"stub")
+            with patch("startup_update.current_exe_path", return_value=exe):
+                self.assertEqual(app_version(), "9.9.9")
 
     def test_prepare_startup_updates_no_manifest_is_silent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
