@@ -63,6 +63,8 @@ class TestUpdateDataInstaller(unittest.TestCase):
             self.assertEqual((data_local / "default_protocol.docx").read_bytes(), payload)
             self.assertEqual((install / "protocols.db").read_bytes(), b"db")
             self.assertFalse((install / "Data_base.xlsx").exists())
+            self.assertFalse((install / "data.backup").exists())
+            self.assertFalse((data_local / "default_protocol.docx.bak").exists())
 
     def test_apply_data_updates_restores_backup_on_checksum_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -105,6 +107,8 @@ class TestUpdateDataInstaller(unittest.TestCase):
             with self.assertRaises(UpdateInstallerError):
                 apply_data_updates(manifest_path, manifest, exe)
             self.assertEqual((data_local / "default_protocol.docx").read_bytes(), b"keep")
+            self.assertFalse((install / "data.backup").exists())
+            self.assertFalse((data_local / "default_protocol.docx.bak").exists())
 
     def test_data_file_destination_under_data_subdir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

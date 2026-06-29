@@ -39,7 +39,7 @@ def main() -> int:
     for item in candidates:
         flag = "NEW" if is_newer_version(item.version, current) else "   "
         payload = item.manifest.windows_payload_path(item.anchor_manifest_path)
-        print(f"  [{flag}] {item.version} — {payload} ({item.source})")
+        print(f"  [{flag}] {item.platform}/{item.version} — {payload} ({item.source})")
 
     resolved = resolve_latest_update(share_root, current_version=current)
     print()

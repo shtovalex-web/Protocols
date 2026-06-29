@@ -1,8 +1,9 @@
 # -*- coding: utf-8
-"""Поиск обновлений во вложенных каталогах шары (manifest.json и ProtocolOOT.exe)."""
+"""Поиск обновлений в каталогах платформ шары: windows/<версия>/, linux/<версия>/."""
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,7 +17,12 @@ from update_manifest import (
 from version_compare import is_newer_version, parse_version
 
 DEFAULT_WINDOWS_EXE_NAME = "ProtocolOOT.exe"
-_WINDOWS_SUBDIR = "windows"
+DEFAULT_LINUX_EXE_NAME = "ProtocolOOT"
+UPDATE_PLATFORM_SUBDIRS = ("windows", "linux")
+PLATFORM_EXE_NAMES = {
+    "windows": DEFAULT_WINDOWS_EXE_NAME,
+    "linux": DEFAULT_LINUX_EXE_NAME,
+}
 
 
 @dataclass(frozen=True)
@@ -24,7 +30,12 @@ class UpdateCandidate:
     version: str
     manifest: UpdateManifest
     anchor_manifest_path: Path
+    platform: str
     source: str
+
+
+def default_update_platform() -> str:
+    return "windows" if sys.platform == "win32" else "linux"
 
 
 def share_root_from_manifest(manifest_path: Path) -> Path:
@@ -43,19 +54,16 @@ def version_from_dir_name(name: str) -> str | None:
 
 def manifest_from_exe(
     *,
-    share_root: Path,
     exe_path: Path,
     version: str,
     changes: list[str] | None = None,
 ) -> UpdateManifest:
-    resolved_exe = exe_path.resolve()
-    rel = resolved_exe.relative_to(share_root.resolve())
-    size = resolved_exe.stat().st_size
-    digest = sha256_file(resolved_exe)
+    size = exe_path.stat().st_size
+    digest = sha256_file(exe_path)
     return UpdateManifest(
         latest_version=version,
         windows=WindowsUpdatePayload(
-            relative_path=str(rel).replace("\\", "/"),
+            relative_path=exe_path.name,
             sha256=digest,
             size=size,
         ),
@@ -63,7 +71,7 @@ def manifest_from_exe(
     )
 
 
-def _candidate_from_manifest_file(manifest_path: Path) -> UpdateCandidate | None:
+def _candidate_from_manifest_file(manifest_path: Path, *, platform: str) -> UpdateCandidate | None:
     try:
         manifest = load_update_manifest(manifest_path)
     except (UpdateManifestError, OSError):
@@ -75,65 +83,86 @@ def _candidate_from_manifest_file(manifest_path: Path) -> UpdateCandidate | None
         version=manifest.latest_version,
         manifest=manifest,
         anchor_manifest_path=manifest_path,
-        source=f"manifest:{manifest_path.name}",
+        platform=platform,
+        source=f"manifest:{manifest_path.parent.name}",
     )
 
 
-def _candidate_from_version_exe(
+def _candidate_from_version_dir(
     *,
-    share_root: Path,
-    exe_path: Path,
-    version: str,
+    version_dir: Path,
+    platform: str,
+    exe_name: str,
 ) -> UpdateCandidate | None:
+    version = version_from_dir_name(version_dir.name)
+    if version is None:
+        return None
+
+    manifest_path = version_dir / "manifest.json"
+    if manifest_path.is_file():
+        return _candidate_from_manifest_file(manifest_path, platform=platform)
+
+    exe_path = version_dir / exe_name
     if not exe_path.is_file():
         return None
-    version_dir = exe_path.parent
-    manifest_file = version_dir / "manifest.json"
-    if manifest_file.is_file():
-        return _candidate_from_manifest_file(manifest_file)
-    manifest = manifest_from_exe(share_root=share_root, exe_path=exe_path, version=version)
+
+    manifest = manifest_from_exe(exe_path=exe_path, version=version)
     return UpdateCandidate(
         version=version,
         manifest=manifest,
-        anchor_manifest_path=share_root / "manifest.json",
-        source=f"exe:{exe_path.relative_to(share_root)}",
+        anchor_manifest_path=manifest_path,
+        platform=platform,
+        source=f"exe:{platform}/{version_dir.name}/{exe_name}",
     )
+
+
+def _scan_platform_dir(
+    share_root: Path,
+    *,
+    platform: str,
+    exe_name: str | None = None,
+) -> list[UpdateCandidate]:
+    platform_root = share_root / platform
+    if not platform_root.is_dir():
+        return []
+
+    payload_name = exe_name or PLATFORM_EXE_NAMES.get(platform, DEFAULT_WINDOWS_EXE_NAME)
+    found: dict[str, UpdateCandidate] = {}
+
+    for entry in sorted(platform_root.iterdir(), key=lambda item: item.name):
+        if not entry.is_dir():
+            continue
+        candidate = _candidate_from_version_dir(
+            version_dir=entry,
+            platform=platform,
+            exe_name=payload_name,
+        )
+        if candidate is None:
+            continue
+        found[candidate.version] = candidate
+
+    return list(found.values())
 
 
 def scan_update_candidates(
     share_root: Path,
     *,
-    exe_name: str = DEFAULT_WINDOWS_EXE_NAME,
+    platform: str | None = None,
+    exe_name: str | None = None,
 ) -> list[UpdateCandidate]:
-    """Сканирует share_root: manifest.json во вложенных папках и exe в каталогах версий."""
+    """Сканирует windows/<версия>/ и linux/<версия>/ (или одну платформу)."""
     root = share_root.expanduser().resolve()
     if not root.is_dir():
         return []
 
-    found: dict[str, UpdateCandidate] = {}
+    platforms = (platform,) if platform else UPDATE_PLATFORM_SUBDIRS
+    found: dict[tuple[str, str], UpdateCandidate] = {}
 
-    for manifest_path in root.rglob("manifest.json"):
-        candidate = _candidate_from_manifest_file(manifest_path)
-        if candidate is None:
-            continue
-        found[candidate.version] = candidate
+    for platform_name in platforms:
+        for candidate in _scan_platform_dir(root, platform=platform_name, exe_name=exe_name):
+            found[(candidate.platform, candidate.version)] = candidate
 
-    for exe_path in root.rglob(exe_name):
-        version = version_from_dir_name(exe_path.parent.name)
-        if version is None:
-            continue
-        candidate = _candidate_from_version_exe(
-            share_root=root,
-            exe_path=exe_path,
-            version=version,
-        )
-        if candidate is None:
-            continue
-        existing = found.get(version)
-        if existing is None or existing.source.startswith("exe:"):
-            found[version] = candidate
-
-    return sorted(found.values(), key=lambda item: parse_version(item.version))
+    return sorted(found.values(), key=lambda item: (item.platform, parse_version(item.version)))
 
 
 def pick_newest_update(
@@ -150,11 +179,13 @@ def resolve_latest_update(
     share_root: Path,
     *,
     current_version: str,
-    exe_name: str = DEFAULT_WINDOWS_EXE_NAME,
+    platform: str | None = None,
+    exe_name: str | None = None,
 ) -> UpdateCandidate | None:
-    """Сканирование каталога шары; выбор новейшей версии выше текущей."""
+    """Сканирование каталогов платформ; выбор новейшей версии выше текущей."""
     root = share_root.expanduser().resolve()
     if not root.is_dir():
         return None
-    candidates = scan_update_candidates(root, exe_name=exe_name)
+    target_platform = platform if platform is not None else default_update_platform()
+    candidates = scan_update_candidates(root, platform=target_platform, exe_name=exe_name)
     return pick_newest_update(candidates, current_version)

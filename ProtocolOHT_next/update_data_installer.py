@@ -4,20 +4,25 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
-from update_bundle_files import DATA_POLICY_REPLACE, DATA_SUBDIR_NAME
+from update_bundle_files import DATA_SUBDIR_NAME
 from update_installer import UpdateInstallerError, stage_payload_copy
 from update_info import write_update_info
 from update_manifest import DataFilePayload, UpdateManifest
 
+DATA_FILE_BACKUP_SUFFIX = ".bak"
+
+
+@dataclass
+class _ReplacedFileRollback:
+    destination: Path
+    backup: Path | None
+
 
 def data_dir_for_exe(exe_path: Path) -> Path:
     return exe_path.resolve().parent / DATA_SUBDIR_NAME
-
-
-def data_backup_dir_for_exe(exe_path: Path) -> Path:
-    return exe_path.resolve().parent / f"{DATA_SUBDIR_NAME}.backup"
 
 
 def data_file_source(manifest_path: Path, entry: DataFilePayload) -> Path:
@@ -29,24 +34,30 @@ def data_file_destination(exe_path: Path, entry: DataFilePayload) -> Path:
     return data_dir_for_exe(exe_path) / name
 
 
-def _backup_data_dir(exe_path: Path) -> None:
-    src = data_dir_for_exe(exe_path)
-    if not src.is_dir():
-        return
-    backup = data_backup_dir_for_exe(exe_path)
-    if backup.exists():
-        shutil.rmtree(backup)
-    shutil.copytree(src, backup)
+def _backup_data_file(destination: Path) -> Path | None:
+    """Копия одного файла как <имя>.bak; None — файла не было."""
+    if not destination.is_file():
+        return None
+    backup = destination.with_name(destination.name + DATA_FILE_BACKUP_SUFFIX)
+    if backup.is_file():
+        backup.unlink()
+    shutil.copy2(destination, backup)
+    return backup
 
 
-def _restore_data_backup(exe_path: Path) -> None:
-    backup = data_backup_dir_for_exe(exe_path)
-    if not backup.is_dir():
-        return
-    dest = data_dir_for_exe(exe_path)
-    if dest.exists():
-        shutil.rmtree(dest)
-    shutil.copytree(backup, dest)
+def _discard_data_file_backups(rollbacks: list[_ReplacedFileRollback]) -> None:
+    for item in rollbacks:
+        if item.backup and item.backup.is_file():
+            item.backup.unlink()
+
+
+def _restore_data_file_backups(rollbacks: list[_ReplacedFileRollback]) -> None:
+    for item in rollbacks:
+        if item.backup and item.backup.is_file():
+            shutil.copy2(item.backup, item.destination)
+            item.backup.unlink()
+        elif item.destination.is_file():
+            item.destination.unlink()
 
 
 def mark_data_version_installed(exe_path: Path, manifest: UpdateManifest) -> None:
@@ -69,18 +80,21 @@ def apply_data_updates(
         return
 
     data_dir_for_exe(exe_path).mkdir(parents=True, exist_ok=True)
-    _backup_data_dir(exe_path)
+    rollbacks: list[_ReplacedFileRollback] = []
 
     try:
         for entry in entries:
             source = data_file_source(manifest_path, entry)
             destination = data_file_destination(exe_path, entry)
+            backup = _backup_data_file(destination)
+            rollbacks.append(_ReplacedFileRollback(destination, backup))
             stage_payload_copy(
                 source,
                 destination,
                 expected_sha256=entry.sha256,
                 expected_size=entry.size,
             )
+        _discard_data_file_backups(rollbacks)
     except (UpdateInstallerError, OSError):
-        _restore_data_backup(exe_path)
+        _restore_data_file_backups(rollbacks)
         raise
