@@ -29,8 +29,8 @@ py -3.12 build_windows_exe.py "D:\Путь\к\папке\Windows"
 
 Результат:
 
-- **`ProtocolOOT.exe`** (onefile) и **`data/`** в выбранной папке;
-- публикация на **`D:\Обновление\windows\<версия>/`** (manifest + exe + data);
+- **`ProtocolOOT.exe`** (onefile), **`data/`** и **`manifest.json`** в выбранной папке;
+- публикация на **`D:\Обновление\windows\<версия>/`** (копия exe + data + manifest);
 - **`data/update_info.json`** — маркер версии комплекта.
 
 Локальная папка **`UPDATE/`** в репозитории **не используется**.

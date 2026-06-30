@@ -83,6 +83,8 @@ TOOLS_PY = (
     "patch_protocol_template_markers.py",
     "remove_logo_background.py",
     "capture_manual_screenshots.py",
+    "publish_update_manifest.py",
+    "scan_update_share.py",
 )
 
 LINUX_PORT_SKIP_PARTS = frozenset(
@@ -112,7 +114,7 @@ IB_README = """Пакет исходников ProtocolOOT для проверк
   • linux_port/app/ (генерируется prepare.py), venv, кэши, .git, .cursor
 
 Включено:
-  • Python: корень + ProtocolOHT_next/
+  • Python: корень + ProtocolOHT_next/ + desktop_updater/
   • bundle/ — шаблоны, FAQ, инструкции, XSD Минтруда
   • tests/ — unit-тесты
   • linux_port/ — сборка под Linux (без сгенерированной app/)
@@ -253,6 +255,7 @@ def pack(*, out_zip: Path | None = None) -> Path:
 
     copied.extend(_copy_tree(BUNDLE, staging / "bundle"))
     copied.extend(_copy_tree(NEXT, staging / "ProtocolOHT_next"))
+    copied.extend(_copy_tree(ROOT / "desktop_updater", staging / "desktop_updater"))
 
     for name in TOOLS_PY:
         if _copy_file(TOOLS / name, staging / "tools" / name):

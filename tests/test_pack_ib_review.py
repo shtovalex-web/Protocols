@@ -36,6 +36,8 @@ class TestPackIbReview(unittest.TestCase):
             self.assertIn("ИБ_MANIFEST.txt", names)
             self.assertIn("tests/test_pack_ib_review.py", names)
             self.assertIn("linux_port/prepare.py", names)
+            self.assertIn("desktop_updater/manifest.py", names)
+            self.assertIn("tools/publish_update_manifest.py", names)
             self.assertNotIn("linux_port/app/main.py", names)
 
 

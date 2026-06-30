@@ -238,6 +238,33 @@ def _publish_update_share(
     )
 
 
+def _write_release_manifest(
+    *,
+    exe: Path,
+    data_dir: Path,
+    release_dir: Path,
+) -> Path:
+    """manifest.json в папке релиза (рядом с exe и data/)."""
+    if str(NEXT) not in sys.path:
+        sys.path.insert(0, str(NEXT))
+    from protocol_app_info import APP_VERSION
+
+    version = (APP_VERSION or "").strip()
+    if not version:
+        msg = "APP_VERSION пуст — не удалось записать manifest.json в папку релиза"
+        raise ValueError(msg)
+    publish = _load_publish_module()
+    return publish._write_manifest(
+        target_dir=release_dir,
+        target_payload=exe,
+        target_data=data_dir,
+        version=version,
+        changes=[f"Сборка {version}"],
+        mandatory=False,
+        released=date.today().isoformat(),
+    )
+
+
 def _try_publish_deploy_update_share(
     *,
     exe: Path,
@@ -309,7 +336,7 @@ DIST_README = """Папка готовой сборки (onefile + компле�
 update_config.json — каталог шары обновлений (создаётся при первой сборке, если файла ещё нет;
 существующий не перезаписывается). Без файла — \\\\tn.tngrp.ru\\df\\AK\\SHR\\Distr_О_О\\Шитов Алексей Александрович из кода программы.
 
-manifest.json рядом с exe здесь не создаётся: он лежит на шаре в windows/<версия>/manifest.json.
+manifest.json создаётся в этой папке при сборке (рядом с exe) и дублируется на шаре в windows/<версия>/manifest.json.
 После сборки комплект для обновления публикуется на шару (D:\\Обновление при сборке в ProtocolOHT_onefile или UNC выше).
 В data/ записывается update_info.json — маркер версии комплекта шаблонов и справки.
 Для ProtocolOHT_onefile update_config.json по умолчанию указывает на D:/Обновление (если файла ещё нет).
@@ -469,6 +496,20 @@ def main() -> int:
         share_root=DEPLOY_UPDATE_SHARE_DIR if dev_build else None,
     )
 
+    release_manifest: Path | None = None
+    if not copy_failures:
+        try:
+            release_manifest = _write_release_manifest(
+                exe=exe,
+                data_dir=data_dir,
+                release_dir=OUT_DIR,
+            )
+        except (OSError, ValueError, SystemExit) as error:
+            print(
+                f"\nВнимание: не удалось записать manifest.json в папку релиза: {error}",
+                file=sys.stderr,
+            )
+
     deploy_manifest = _try_publish_deploy_update_share(exe=exe, data_dir=data_dir)
 
     print()
@@ -476,6 +517,8 @@ def main() -> int:
     print(f"  {exe}")
     print(f"  Комплект в {data_dir.name}/: {copied} файл(ов)")
     print(f"  Маркер версии: {update_info_path}")
+    if release_manifest is not None:
+        print(f"  manifest релиза: {release_manifest}")
     if deploy_manifest is not None:
         print(f"  Шара обновлений: {DEPLOY_UPDATE_SHARE_DIR}")
         print(f"  manifest: {deploy_manifest}")
