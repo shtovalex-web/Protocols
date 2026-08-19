@@ -13,7 +13,8 @@
     py -3 build_windows_exe.py
     (перед PyInstaller выполняется ruff check . по ruff.toml; только проверка: verify.bat → tools/verify_project.py)
     py -3 build_windows_exe.py "D:\\Проекты Курсор\\Программа протокола"
-    или двойной щелчок по build_windows_exe.bat (рабочая папка — каталог со скриптом)
+    py -3 build_windows_exe.py --print-version
+    или двойной щелчок по build_windows_exe.bat (папка DEPLOY_ROOT\\<версия>\\, см. bat)
 
 Без аргументов сначала открывается диалог выбора папки (tkinter); «Отмена» — выход без сборки.
 Необязательный аргумент — путь к папке вывода (перетаскивание на .bat, создание при необходимости).
@@ -371,8 +372,24 @@ def _run_ruff_check() -> int:
     return rc
 
 
+def _app_version() -> str:
+    if str(NEXT) not in sys.path:
+        sys.path.insert(0, str(NEXT))
+    from protocol_app_info import APP_VERSION
+
+    return (APP_VERSION or "").strip()
+
+
 def main() -> int:
     os.chdir(ROOT)
+    if len(sys.argv) == 2 and sys.argv[1] == "--print-version":
+        version = _app_version()
+        if not version:
+            print("?", file=sys.stderr)
+            return 1
+        print(version)
+        return 0
+
     try:
         import PyInstaller  # noqa: F401
     except ImportError:

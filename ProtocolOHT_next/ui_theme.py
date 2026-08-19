@@ -591,13 +591,41 @@ def window_appears_maximized_or_fullscreen(
     return ww >= sw - margin_w and wh >= sh - margin_h
 
 
+def maximize_window(win: tk.Misc) -> None:
+    """Развернуть окно на весь экран (Windows: zoomed; Linux: атрибут или geometry)."""
+    try:
+        win.update_idletasks()
+    except tk.TclError:
+        pass
+    try:
+        win.state("zoomed")
+        return
+    except tk.TclError:
+        pass
+    try:
+        win.attributes("-zoomed", True)
+        return
+    except tk.TclError:
+        pass
+    try:
+        sw = int(win.winfo_screenwidth())
+        sh = int(win.winfo_screenheight())
+        win.geometry(f"{sw}x{sh}+0+0")
+    except tk.TclError:
+        pass
+
+
 def apply_startup_geometry(
     win: tk.Misc,
     *,
     min_width: int = 900,
     min_height: int = 560,
+    start_maximized: bool = True,
 ) -> None:
     win.minsize(min_width, min_height)
+    if start_maximized:
+        maximize_window(win)
+        return
     _center_window(
         win,
         min_width=min(min_width + 80, win.winfo_screenwidth() - 40),

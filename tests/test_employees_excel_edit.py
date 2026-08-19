@@ -1,0 +1,243 @@
+# -*- coding: utf-8 -*-
+"""Запись сотрудников в Data_base.xlsx: добавление, архив, восстановление."""
+
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from _bootstrap import setup_main_project_paths
+
+setup_main_project_paths()
+
+from employees_io import (
+    EmployeeRecord,
+    add_employee_to_excel,
+    archive_employees_in_excel,
+    employee_rows_for_excel_add,
+    load_archived_employees_from_excel,
+    load_employees_from_excel,
+    restore_employees_from_archive,
+    write_template_data_base_workbook,
+    _analyze_employee_worksheet,
+    _collect_employee_rows_from_sheet,
+    _last_employee_data_row,
+)
+
+
+class TestEmployeesExcelEdit(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self._tmp.name) / "Data_base.xlsx"
+        write_template_data_base_workbook(self.path)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_add_employee_appends_row(self) -> None:
+        rec = EmployeeRecord(
+            fio="Иванов Иван Иванович",
+            subdivision="Цех 1",
+            profession="Слесарь",
+            snils="12345678901",
+        )
+        add_employee_to_excel(self.path, rec, backup=False)
+        rows = load_employees_from_excel(self.path)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].fio, rec.fio)
+        self.assertEqual(rows[0].profession, rec.profession)
+
+    def test_employee_rows_for_excel_add_splits_profession2(self) -> None:
+        rec = EmployeeRecord(
+            fio="A",
+            profession="Слесарь",
+            profession2="Электрик",
+        )
+        rows = employee_rows_for_excel_add(rec)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0].profession, "Слесарь")
+        self.assertEqual(rows[1].profession, "Электрик")
+
+    def test_add_employee_with_profession2_creates_two_rows(self) -> None:
+        rec = EmployeeRecord(
+            fio="Сидоров Сидор Сидорович",
+            subdivision="Цех 2",
+            profession="Слесарь",
+            profession2="Электрик",
+            snils="111",
+        )
+        n = add_employee_to_excel(self.path, rec, backup=False)
+        self.assertEqual(n, 2)
+        rows = load_employees_from_excel(self.path)
+        self.assertEqual(len(rows), 2)
+        professions = sorted(r.profession for r in rows)
+        self.assertEqual(professions, ["Слесарь", "Электрик"])
+        self.assertTrue(all(r.fio == rec.fio for r in rows))
+        self.assertTrue(all(not (r.profession2 or "").strip() for r in rows))
+
+    def test_archive_and_restore_roundtrip(self) -> None:
+        rec = EmployeeRecord(
+            fio="Петров Пётр Петрович",
+            subdivision="Участок",
+            profession="Электрик",
+        )
+        add_employee_to_excel(self.path, rec, backup=False)
+        n = archive_employees_in_excel(self.path, [rec], backup=False)
+        self.assertEqual(n, 1)
+        self.assertEqual(load_employees_from_excel(self.path), [])
+        archived = load_archived_employees_from_excel(self.path)
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(archived[0].fio, rec.fio)
+        r = restore_employees_from_archive(self.path, [rec], backup=False)
+        self.assertEqual(r, 1)
+        active = load_employees_from_excel(self.path)
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0].fio, rec.fio)
+        self.assertEqual(load_archived_employees_from_excel(self.path), [])
+
+    def test_restore_by_fio_and_profession_only(self) -> None:
+        """Восстановление по ФИО и должности из списка архива (без привязки к № строки)."""
+        rec = EmployeeRecord(
+            fio="Козлов Козел Козлович",
+            subdivision="Цех 3",
+            profession="Токарь",
+        )
+        add_employee_to_excel(self.path, rec, backup=False)
+        archive_employees_in_excel(self.path, [rec], backup=False)
+        archived = load_archived_employees_from_excel(self.path)
+        target = EmployeeRecord(fio=rec.fio, profession=rec.profession, subdivision="")
+        r = restore_employees_from_archive(self.path, [target], backup=False)
+        self.assertEqual(r, 1)
+        self.assertEqual(len(load_employees_from_excel(self.path)), 1)
+
+    def test_restore_using_records_from_load_archived(self) -> None:
+        """Как в UI «Архив…»: восстановление записей, прочитанных с листа архива."""
+        rec = EmployeeRecord(
+            fio="Козлов Козел Козлович",
+            subdivision="Цех 3",
+            profession="Токарь",
+        )
+        add_employee_to_excel(self.path, rec, backup=False)
+        archive_employees_in_excel(self.path, [rec], backup=False)
+        archived = load_archived_employees_from_excel(self.path)
+        self.assertEqual(len(archived), 1)
+        r = restore_employees_from_archive(self.path, archived, backup=False)
+        self.assertEqual(r, 1)
+        active = load_employees_from_excel(self.path)
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0].profession, "Токарь")
+
+    def test_restore_archive_match_by_fio_profession(self) -> None:
+        """Восстановление по ФИО+должность, даже если profession2 в Excel заполнен."""
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            self.skipTest("openpyxl not installed")
+        rec = EmployeeRecord(
+            fio="Новиков Новик Новикович",
+            subdivision="Участок 5",
+            profession="Сварщик",
+        )
+        add_employee_to_excel(self.path, rec, backup=False)
+        wb = load_workbook(self.path)
+        ws = wb["rabotnik"]
+        ws.cell(row=1, column=7, value="Совмещаемая профессия")
+        ws.cell(row=2, column=7, value="лишнее совмещение")
+        wb.save(self.path)
+        wb.close()
+        active = load_employees_from_excel(self.path)
+        self.assertEqual(len(active), 1)
+        self.assertEqual((active[0].profession2 or "").strip(), "лишнее совмещение")
+        archive_employees_in_excel(self.path, active, backup=False)
+        archived = load_archived_employees_from_excel(self.path)
+        self.assertEqual((archived[0].profession2 or "").strip(), "лишнее совмещение")
+        target = EmployeeRecord(
+            fio=rec.fio,
+            subdivision=rec.subdivision,
+            profession=rec.profession,
+            profession2="",
+        )
+        r = restore_employees_from_archive(self.path, [target], backup=False)
+        self.assertEqual(r, 1)
+
+    def test_restore_two_professions_same_fio_tab_header(self) -> None:
+        """Data_base с Таб.№ и «Фамилия, И.»: два должности у одного ФИО — архив и восстановление."""
+        try:
+            from openpyxl import Workbook, load_workbook
+        except ImportError:
+            self.skipTest("openpyxl not installed")
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "rabotnik"
+        ws.append(
+            [
+                "№ п/п",
+                "Таб.№",
+                "Фамилия, И.",
+                "Подразделение",
+                "Должность",
+                "№ страхового свидетельства",
+            ]
+        )
+        ws.append([1, 13000000, "Иванов Иван Иванович", "СНТ Ромашково", "Стропальщик", "123"])
+        ws.append([1, 13000000, "Иванов Иван Иванович", "СНТ Ромашково", "Слесарь", "123"])
+        wb.save(self.path)
+        wb.close()
+        rows = load_employees_from_excel(self.path)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r.profession for r in rows}, {"Стропальщик", "Слесарь"})
+        to_archive = [r for r in rows if r.profession == "Слесарь"]
+        archive_employees_in_excel(self.path, to_archive, backup=False)
+        wb_arch = load_workbook(self.path)
+        ws_arch = wb_arch["rabotnik_archive"]
+        arch_layout = _analyze_employee_worksheet(ws_arch)
+        arch_serial = ws_arch.cell(row=2, column=arch_layout.serial_col + 1).value
+        self.assertIn(arch_serial, (None, ""))
+        wb_arch.close()
+        archived = load_archived_employees_from_excel(self.path)
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(archived[0].profession, "Слесарь")
+        r = restore_employees_from_archive(self.path, archived, backup=False)
+        self.assertEqual(r, 1)
+        active = load_employees_from_excel(self.path)
+        self.assertEqual(len(active), 2)
+        professions = sorted(r.profession for r in active)
+        self.assertEqual(professions, ["Слесарь", "Стропальщик"])
+        wb2 = load_workbook(self.path)
+        ws2 = wb2["rabotnik"]
+        layout = _analyze_employee_worksheet(ws2)
+        self.assertGreaterEqual(layout.cols.get("fio", -1), 0)
+        last_row = _last_employee_data_row(ws2, layout)
+        self.assertGreaterEqual(last_row, 3)
+        restored_prof = ws2.cell(row=last_row, column=layout.col_prof + 1).value
+        self.assertEqual(str(restored_prof).strip(), "Слесарь")
+        if layout.serial_col >= 0:
+            restored_serial = ws2.cell(row=last_row, column=layout.serial_col + 1).value
+            self.assertIn(restored_serial, (None, ""))
+        tab_val = ws2.cell(row=last_row, column=2).value
+        self.assertEqual(tab_val, 13000000)
+        wb2.close()
+
+    def test_collect_employee_rows_finds_data_beyond_stale_max_row(self) -> None:
+        """Поиск строк архива через iter_rows, а не ws.max_row (устаревший max_row)."""
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            self.skipTest("openpyxl not installed")
+        rec = EmployeeRecord(fio="A B C", profession="X", subdivision="Y")
+        add_employee_to_excel(self.path, rec, backup=False)
+        archive_employees_in_excel(self.path, [rec], backup=False)
+        wb = load_workbook(self.path)
+        archive_ws = wb["rabotnik_archive"]
+        layout = _analyze_employee_worksheet(archive_ws)
+        rows_before = _collect_employee_rows_from_sheet(archive_ws, layout)
+        self.assertEqual(len(rows_before), 1)
+        wb.close()
+        archived = load_archived_employees_from_excel(self.path)
+        r = restore_employees_from_archive(self.path, archived, backup=False)
+        self.assertEqual(r, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

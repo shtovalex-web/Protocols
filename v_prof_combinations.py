@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from tkinter import messagebox, ttk
 
 from employees_io import EmployeeRecord
-from ui_theme import SPACING, SPACING_LG, apply_theme_to_window, configure_canvas, pad
+from ui_theme import Colors, SPACING, SPACING_LG, apply_theme_to_window, configure_canvas
 from v_program_registry_match import norm_profession_key
 
 
@@ -101,9 +101,8 @@ class VProfCombinationsDialog(tk.Toplevel):
         apply_theme_to_window(self)
         self.title("Совмещения — программы «В»")
         self.transient(master)
-        self.grab_set()
         self.resizable(True, True)
-        self.minsize(520, 240)
+        self.minsize(520, 320)
         self._result: VProfCombinationConfig | None = None
         self._main_vars: dict[str, tk.StringVar] = {}
         self._check_vars: dict[tuple[str, str], tk.BooleanVar] = {}
@@ -112,6 +111,9 @@ class VProfCombinationsDialog(tk.Toplevel):
 
         outer = ttk.Frame(self, padding=SPACING_LG)
         outer.pack(fill=tk.BOTH, expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
+
         ttk.Label(
             outer,
             text=(
@@ -120,25 +122,37 @@ class VProfCombinationsDialog(tk.Toplevel):
             ),
             wraplength=480,
             style="Hint.TLabel",
-        ).pack(anchor=tk.W, pady=(0, SPACING))
+        ).grid(row=0, column=0, sticky=tk.W, pady=(0, SPACING))
 
         body = ttk.Frame(outer)
-        body.pack(fill=tk.BOTH, expand=True)
+        body.grid(row=1, column=0, sticky=tk.NSEW)
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
         canvas = tk.Canvas(body, highlightthickness=0)
         configure_canvas(canvas)
         sb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=canvas.yview)
-        inner = ttk.Frame(canvas)
-        inner.bind(
-            "<Configure>",
-            lambda _e: canvas.configure(scrollregion=canvas.bbox("all")),
-        )
-        canvas.create_window((0, 0), window=inner, anchor=tk.NW)
+        inner = tk.Frame(canvas, bg=Colors.window_bg)
+        canvas_window = canvas.create_window((0, 0), window=inner, anchor=tk.NW)
+
+        def _sync_scroll_region(_event: object | None = None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _sync_canvas_width(event: tk.Event) -> None:
+            canvas.itemconfigure(canvas_window, width=event.width)
+
+        inner.bind("<Configure>", _sync_scroll_region)
+        canvas.bind("<Configure>", _sync_canvas_width)
         canvas.configure(yscrollcommand=sb.set)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.grid(row=0, column=0, sticky=tk.NSEW)
+        sb.grid(row=0, column=1, sticky=tk.NS)
 
         for fio_key, fio, profs in groups:
-            lf = ttk.Labelframe(inner, text=fio, padding=pad(), style="Card.TLabelframe")
+            lf = ttk.Labelframe(
+                inner,
+                text=fio,
+                padding=SPACING,
+                style="Card.TLabelframe",
+            )
             lf.pack(fill=tk.X, pady=(0, SPACING))
             enabled_set = init_enabled.get(fio_key)
             main_init = (init_main.get(fio_key) or "").strip()
@@ -164,7 +178,7 @@ class VProfCombinationsDialog(tk.Toplevel):
                 ).pack(side=tk.LEFT, padx=(12, 0))
 
         btns = ttk.Frame(outer)
-        btns.pack(fill=tk.X, pady=(SPACING_LG, 0))
+        btns.grid(row=2, column=0, sticky=tk.EW, pady=(SPACING_LG, 0))
         ttk.Button(btns, text="OK", command=self._on_ok, width=10, style="Accent.TButton").pack(
             side=tk.RIGHT
         )
@@ -173,8 +187,10 @@ class VProfCombinationsDialog(tk.Toplevel):
         )
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
         self.bind("<Escape>", lambda _e: self._on_cancel())
+        self.grab_set()
         self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx() + 40}+{master.winfo_rooty() + 40}")
+        _sync_scroll_region()
+        self.geometry(f"560x360+{master.winfo_rootx() + 40}+{master.winfo_rooty() + 40}")
 
     def _on_ok(self) -> None:
         main_by_fio: dict[str, str] = {}

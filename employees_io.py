@@ -78,6 +78,13 @@ PROGRAM_WORKBOOK_CANONICAL_SHEETS: tuple[str, ...] = (
     "V",
 )
 EMPLOYEES_SHEET_NAME = "rabotnik"
+EMPLOYEES_ARCHIVE_SHEET_NAME = "rabotnik_archive"
+EMPLOYEES_ARCHIVE_SHEET_ALIASES: tuple[str, ...] = (
+    "rabotnik_archive",
+    "архив",
+    "архив сотрудников",
+    "archive",
+)
 EMPLOYEES_SHEET_ALIASES: tuple[str, ...] = (
     "rabotnik",
     "работник",
@@ -87,6 +94,16 @@ EMPLOYEES_SHEET_ALIASES: tuple[str, ...] = (
     "список сотрудников",
     "кадры",
 )
+
+
+@dataclass(frozen=True)
+class ArchivedEmployeeEntry:
+    """Строка листа архива: номер строки Excel + запись (для восстановления без повторного сопоставления)."""
+
+    row_num: int
+    record: EmployeeRecord
+    sheet_name: str = EMPLOYEES_ARCHIVE_SHEET_NAME
+
 
 COMMISSION_SHEET_NAME = "komission"
 COMMISSION_SHEET_ALIASES: tuple[str, ...] = (
@@ -125,7 +142,9 @@ def _normalize_excel_header(value: object) -> str:
 def _header_column_role(header: str) -> str | None:
     if not header:
         return None
-    # Одна колонка «Фамилия, Имя, Отчество» или ФИО (актуальная форма Data_base.xlsx).
+    # Одна колонка «Фамилия, Имя, Отчество», «Фамилия, И.» / ФИО.
+    if "фамилия" in header and "должн" not in header:
+        return "fio"
     if (
         "фио" in header
         or "ф.и.о" in header
@@ -769,6 +788,31 @@ def employee_unique_key(rec: EmployeeRecord) -> str:
     )
 
 
+def employee_archive_restore_key(rec: EmployeeRecord) -> str:
+    """Ключ восстановления из архива: ФИО + должность (как в списке «Архив…»)."""
+    return "|".join(
+        (
+            _norm_employee_match_part(rec.fio),
+            _norm_employee_match_part(rec.profession),
+        )
+    )
+
+
+def employee_archive_match_key(rec: EmployeeRecord) -> str:
+    """Ключ для поиска в архиве с учётом подразделения (архивирование и пр.)."""
+    return "|".join(
+        (
+            _norm_employee_match_part(rec.fio),
+            _norm_employee_match_part(rec.profession),
+            _norm_employee_match_part(rec.subdivision),
+        )
+    )
+
+
+def _norm_employee_match_part(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower().replace("ё", "е"))
+
+
 def write_template_data_base_workbook(path: Path) -> None:
     """
     Пустая книга Data_base.xlsx: лист сотрудников (заголовки) и лист комиссии (пояснение + данные с 3-й строки).
@@ -953,3 +997,571 @@ def write_template_programs_workbook(path: Path) -> None:
         ]
     )
     wb.save(path)
+
+
+@dataclass
+class _EmployeeSheetColumns:
+    """Разметка листа сотрудников для записи в Excel (номера строк/столбцов — как в openpyxl)."""
+
+    header_row: int
+    cols: dict[str, int]
+    use_legacy: bool
+    col_fio: int
+    col_prof: int
+    col_sub: int
+    col_prof2: int
+    col_snils: int
+    serial_col: int
+    max_col: int
+
+
+def _detect_serial_column(header_row: tuple[Any, ...]) -> int:
+    """Только колонка «№ п/п», не Таб.№ и не СНИЛС."""
+    for j, cell in enumerate(header_row):
+        hn = _normalize_excel_header(cell)
+        if "п/п" in hn:
+            return j
+    return -1
+
+
+def _analyze_employee_worksheet(ws: Any) -> _EmployeeSheetColumns:
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        header_idx = 0
+        header: tuple[Any, ...] = ()
+        cols: dict[str, int] = {}
+        use_legacy = True
+    else:
+        header_idx = _find_employee_header_row_index(rows)
+        header = tuple(rows[header_idx])
+        cols = _detect_employee_columns(header)
+        use_legacy = not ("fio" in cols or ("surname" in cols and "name" in cols))
+    header_row = header_idx + 1
+    serial_col = _detect_serial_column(header) if header else -1
+    max_col = max(len(header), 6) if header else 6
+    return _EmployeeSheetColumns(
+        header_row=header_row,
+        cols=cols,
+        use_legacy=use_legacy,
+        col_fio=0,
+        col_prof=cols.get("profession", 1) if not use_legacy else 1,
+        col_sub=cols.get("subdivision", 2) if not use_legacy else 2,
+        col_prof2=cols.get("profession2", -1) if not use_legacy else -1,
+        col_snils=cols.get("snils", -1) if not use_legacy else -1,
+        serial_col=serial_col,
+        max_col=max_col,
+    )
+
+
+def _employee_record_from_row_values(
+    tup: tuple[Any, ...],
+    layout: _EmployeeSheetColumns,
+) -> EmployeeRecord | None:
+    if layout.use_legacy:
+        fio = _excel_cell_str(tup, layout.col_fio)
+    else:
+        fio = _employee_fio_from_row(tup, layout.cols)
+    if not _is_employee_data_fio(fio):
+        return None
+    p2 = _excel_cell_str(tup, layout.col_prof2) if layout.col_prof2 >= 0 else ""
+    sn = _excel_cell_str(tup, layout.col_snils) if layout.col_snils >= 0 else ""
+    prof = _excel_cell_str(tup, layout.col_prof) if layout.col_prof >= 0 else ""
+    sub = _excel_cell_str(tup, layout.col_sub) if layout.col_sub >= 0 else ""
+    return EmployeeRecord(fio=fio, profession=prof, subdivision=sub, profession2=p2, snils=sn)
+
+
+def _employee_records_match(a: EmployeeRecord, b: EmployeeRecord) -> bool:
+    return employee_unique_key(a) == employee_unique_key(b)
+
+
+def _employee_archive_records_match(a: EmployeeRecord, b: EmployeeRecord) -> bool:
+    return employee_archive_match_key(a) == employee_archive_match_key(b)
+
+
+def _employee_archive_restore_match(a: EmployeeRecord, b: EmployeeRecord) -> bool:
+    return employee_archive_restore_key(a) == employee_archive_restore_key(b)
+
+
+def _collect_employee_rows_from_sheet(
+    ws: Any, layout: _EmployeeSheetColumns
+) -> list[tuple[int, EmployeeRecord]]:
+    """Строки сотрудников: (номер строки Excel, запись). Не опирается на ws.max_row."""
+    out: list[tuple[int, EmployeeRecord]] = []
+    for row_num, row_vals in enumerate(
+        ws.iter_rows(min_row=layout.header_row + 1, values_only=True),
+        start=layout.header_row + 1,
+    ):
+        if not row_vals:
+            continue
+        if not any(v is not None and str(v).strip() for v in row_vals):
+            continue
+        rec = _employee_record_from_row_values(tuple(row_vals), layout)
+        if rec is not None:
+            out.append((row_num, rec))
+    return out
+
+
+def _last_employee_data_row(ws: Any, layout: _EmployeeSheetColumns) -> int:
+    """Последняя строка с данными сотрудника (не ws.max_row)."""
+    rows = _collect_employee_rows_from_sheet(ws, layout)
+    if not rows:
+        return layout.header_row
+    return max(row_num for row_num, _rec in rows)
+
+
+def _append_employee_record(
+    ws: Any,
+    layout: _EmployeeSheetColumns,
+    record: EmployeeRecord,
+    *,
+    assign_serial: bool = False,
+) -> int:
+    """Добавить запись в конец таблицы; № п/п не заполняется (assign_serial=False)."""
+    new_row = _last_employee_data_row(ws, layout) + 1
+    if assign_serial and layout.serial_col >= 0:
+        serial = _next_serial_number(ws, layout)
+        if serial is not None:
+            ws.cell(row=new_row, column=layout.serial_col + 1, value=serial)
+    _write_employee_cells(ws, new_row, record, layout)
+    return new_row
+
+
+def _clear_serial_cell(ws: Any, row_num: int, layout: _EmployeeSheetColumns) -> None:
+    """Не заполняем и не сохраняем № п/п — только данные сотрудника."""
+    if layout.serial_col >= 0:
+        ws.cell(row=row_num, column=layout.serial_col + 1, value="")
+
+
+def _copy_employee_row_clear_serial(
+    ws_src: Any,
+    src_row: int,
+    ws_dst: Any,
+    dst_row: int,
+    *,
+    src_max_col: int,
+    dst_layout: _EmployeeSheetColumns,
+) -> None:
+    """Копия строки Excel с сохранением Таб.№ и прочих колонок; № п/п очищается."""
+    _copy_excel_row(ws_src, src_row, ws_dst, dst_row, src_max_col)
+    _clear_serial_cell(ws_dst, dst_row, dst_layout)
+
+
+def _write_employee_cells(
+    ws: Any,
+    row_num: int,
+    record: EmployeeRecord,
+    layout: _EmployeeSheetColumns,
+) -> None:
+    if layout.use_legacy:
+        ws.cell(row=row_num, column=layout.col_fio + 1, value=(record.fio or "").strip())
+        ws.cell(row=row_num, column=layout.col_prof + 1, value=(record.profession or "").strip())
+        ws.cell(row=row_num, column=layout.col_sub + 1, value=(record.subdivision or "").strip())
+        if layout.col_prof2 >= 0:
+            ws.cell(row=row_num, column=layout.col_prof2 + 1, value=(record.profession2 or "").strip())
+        if layout.col_snils >= 0:
+            ws.cell(row=row_num, column=layout.col_snils + 1, value=(record.snils or "").strip())
+        _clear_serial_cell(ws, row_num, layout)
+        return
+    if "fio" in layout.cols:
+        ws.cell(row=row_num, column=layout.cols["fio"] + 1, value=(record.fio or "").strip())
+    elif "surname" in layout.cols and "name" in layout.cols:
+        parts = (record.fio or "").split()
+        ws.cell(row=row_num, column=layout.cols["surname"] + 1, value=parts[0] if parts else "")
+        ws.cell(
+            row=row_num,
+            column=layout.cols["name"] + 1,
+            value=parts[1] if len(parts) > 1 else "",
+        )
+        if "patronymic" in layout.cols:
+            ws.cell(
+                row=row_num,
+                column=layout.cols["patronymic"] + 1,
+                value=parts[2] if len(parts) > 2 else "",
+            )
+    if layout.col_prof >= 0:
+        ws.cell(row=row_num, column=layout.col_prof + 1, value=(record.profession or "").strip())
+    if layout.col_sub >= 0:
+        ws.cell(row=row_num, column=layout.col_sub + 1, value=(record.subdivision or "").strip())
+    if layout.col_prof2 >= 0:
+        ws.cell(row=row_num, column=layout.col_prof2 + 1, value=(record.profession2 or "").strip())
+    if layout.col_snils >= 0:
+        ws.cell(row=row_num, column=layout.col_snils + 1, value=(record.snils or "").strip())
+    _clear_serial_cell(ws, row_num, layout)
+
+
+def _next_serial_number(ws: Any, layout: _EmployeeSheetColumns) -> int | None:
+    if layout.serial_col < 0:
+        return None
+    best = 0
+    for row in ws.iter_rows(
+        min_row=layout.header_row + 1,
+        max_row=ws.max_row or layout.header_row,
+        values_only=True,
+    ):
+        if not row:
+            continue
+        raw = row[layout.serial_col] if layout.serial_col < len(row) else None
+        try:
+            n = int(str(raw).strip())
+        except (TypeError, ValueError, AttributeError):
+            continue
+        best = max(best, n)
+    return best + 1
+
+
+def _copy_excel_row(ws_src: Any, src_row: int, ws_dst: Any, dst_row: int, max_col: int) -> None:
+    for c in range(1, max_col + 1):
+        ws_dst.cell(row=dst_row, column=c, value=ws_src.cell(row=src_row, column=c).value)
+
+
+def _backup_workbook_before_edit(path: Path) -> Path | None:
+    path = Path(path)
+    if not path.is_file():
+        return None
+    backup = path.with_name(f"{path.stem}_before_edit{path.suffix}")
+    shutil.copy2(path, backup)
+    return backup
+
+
+def _open_employees_workbook_for_edit(path: Path) -> Any:
+    try:
+        from openpyxl import load_workbook
+    except ImportError as e:
+        raise EmployeeExcelError(
+            "Не установлен пакет openpyxl. Выполните: pip install openpyxl"
+        ) from e
+    path = Path(path)
+    if not path.is_file():
+        write_template_data_base_workbook(path)
+    open_path = _workbook_path_for_openpyxl(path)
+    try:
+        return load_workbook(open_path, read_only=False, data_only=True)
+    except PermissionError as e:
+        raise EmployeeExcelError(
+            f"Файл занят другой программой (закройте Excel и повторите):\n{path}"
+        ) from e
+    except Exception as e:
+        raise EmployeeExcelError(
+            f"Не удалось открыть файл для записи:\n{path}\n\n{type(e).__name__}: {e}"
+        ) from e
+
+
+def _find_archive_worksheet(
+    wb: Any,
+    *,
+    preferred_sheet: str = EMPLOYEES_ARCHIVE_SHEET_NAME,
+) -> tuple[Any, str] | tuple[None, None]:
+    """Лист архива сотрудников, если есть (без создания нового)."""
+    names_lower = {n.lower().strip(): n for n in wb.sheetnames}
+    for hint in (preferred_sheet,) + EMPLOYEES_ARCHIVE_SHEET_ALIASES:
+        real = names_lower.get(hint.lower().strip())
+        if real is not None:
+            return wb[real], real
+    return None, None
+
+
+def _pick_archive_worksheet(wb: Any, main_ws: Any, layout: _EmployeeSheetColumns) -> Any:
+    found, _name = _find_archive_worksheet(wb)
+    if found is not None:
+        return found
+    ws = wb.create_sheet(EMPLOYEES_ARCHIVE_SHEET_NAME)
+    for c in range(1, layout.max_col + 1):
+        ws.cell(row=1, column=c, value=main_ws.cell(row=layout.header_row, column=c).value)
+    return ws
+
+
+def _save_employees_workbook(wb: Any, path: Path) -> None:
+    path = Path(path)
+    save_path = _workbook_path_for_openpyxl(path)
+    try:
+        wb.save(save_path)
+    except PermissionError as e:
+        raise EmployeeExcelError(
+            f"Не удалось сохранить файл (закройте Excel и повторите):\n{path}"
+        ) from e
+    except OSError as e:
+        raise EmployeeExcelError(f"Не удалось сохранить файл:\n{path}\n\n{e}") from e
+
+
+def load_archived_employee_entries_from_excel(
+    path: Path,
+    *,
+    sheet_name: str = EMPLOYEES_ARCHIVE_SHEET_NAME,
+) -> list[ArchivedEmployeeEntry]:
+    """Сотрудники с листа архива с номерами строк Excel (для восстановления)."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError as e:
+        raise EmployeeExcelError(
+            "Не установлен пакет openpyxl. Выполните: pip install openpyxl"
+        ) from e
+    path = Path(path)
+    if not path.is_file():
+        return []
+    open_path = _workbook_path_for_openpyxl(path)
+    wb = load_workbook(open_path, read_only=True, data_only=True)
+    try:
+        ws, real_name = _find_archive_worksheet(wb, preferred_sheet=sheet_name)
+        if ws is None or real_name is None:
+            return []
+        layout = _analyze_employee_worksheet(ws)
+        return [
+            ArchivedEmployeeEntry(row_num=row_num, record=rec, sheet_name=real_name)
+            for row_num, rec in _collect_employee_rows_from_sheet(ws, layout)
+        ]
+    finally:
+        wb.close()
+
+
+def load_archived_employees_from_excel(
+    path: Path,
+    *,
+    sheet_name: str = EMPLOYEES_ARCHIVE_SHEET_NAME,
+) -> list[EmployeeRecord]:
+    """Сотрудники с листа архива (rabotnik_archive)."""
+    return [e.record for e in load_archived_employee_entries_from_excel(path, sheet_name=sheet_name)]
+
+
+def employee_rows_for_excel_add(record: EmployeeRecord) -> list[EmployeeRecord]:
+    """
+    Строки для записи в Data_base: при совмещаемой профессии — две строки
+    (основная должность и совмещение), как при формировании блока «Б» протокола.
+    """
+    fio = (record.fio or "").strip()
+    sub = (record.subdivision or "").strip()
+    sn = (record.snils or "").strip()
+    main = (record.profession or "").strip()
+    extra = (record.profession2 or "").strip()
+    if not extra or _norm_employee_sort_str(extra) == _norm_employee_sort_str(main):
+        return [
+            EmployeeRecord(
+                fio=fio,
+                profession=main,
+                subdivision=sub,
+                profession2="",
+                snils=sn,
+            )
+        ]
+    return [
+        EmployeeRecord(
+            fio=fio,
+            profession=main,
+            subdivision=sub,
+            profession2="",
+            snils=sn,
+        ),
+        EmployeeRecord(
+            fio=fio,
+            profession=extra,
+            subdivision=sub,
+            profession2="",
+            snils=sn,
+        ),
+    ]
+
+
+def add_employee_to_excel(
+    path: Path,
+    record: EmployeeRecord,
+    *,
+    backup: bool = True,
+) -> int:
+    """Добавить строки сотрудника на лист rabotnik; при profession2 — две строки. Возвращает число добавленных строк."""
+    fio = (record.fio or "").strip()
+    if not fio:
+        raise EmployeeExcelError("ФИО сотрудника не может быть пустым.")
+    rows_to_add = employee_rows_for_excel_add(record)
+    path = Path(path)
+    if backup and path.is_file():
+        _backup_workbook_before_edit(path)
+    wb = _open_employees_workbook_for_edit(path)
+    try:
+        ws = _pick_employee_worksheet(wb, EMPLOYEES_SHEET_NAME)
+        layout = _analyze_employee_worksheet(ws)
+        if layout.header_row == 1 and (ws.max_row or 0) <= 1 and not layout.cols:
+            wb.close()
+            write_template_data_base_workbook(path)
+            wb = _open_employees_workbook_for_edit(path)
+            ws = _pick_employee_worksheet(wb, EMPLOYEES_SHEET_NAME)
+            layout = _analyze_employee_worksheet(ws)
+        for rec in rows_to_add:
+            _append_employee_record(ws, layout, rec, assign_serial=False)
+        _save_employees_workbook(wb, path)
+    finally:
+        wb.close()
+    return len(rows_to_add)
+
+
+def archive_employees_in_excel(
+    path: Path,
+    records: list[EmployeeRecord],
+    *,
+    backup: bool = True,
+) -> int:
+    """Перенести сотрудников с листа rabotnik на лист rabotnik_archive."""
+    if not records:
+        return 0
+    path = Path(path)
+    if backup and path.is_file():
+        _backup_workbook_before_edit(path)
+    wb = _open_employees_workbook_for_edit(path)
+    moved = 0
+    try:
+        ws = _pick_employee_worksheet(wb, EMPLOYEES_SHEET_NAME)
+        layout = _analyze_employee_worksheet(ws)
+        archive_ws = _pick_archive_worksheet(wb, ws, layout)
+        targets = list(records)
+        main_rows = _collect_employee_rows_from_sheet(ws, layout)
+        for row_num, rec in reversed(main_rows):
+            if not targets:
+                break
+            match_idx = next(
+                (i for i, t in enumerate(targets) if _employee_records_match(t, rec)),
+                None,
+            )
+            if match_idx is None:
+                continue
+            targets.pop(match_idx)
+            archive_layout = _analyze_employee_worksheet(archive_ws)
+            dst_row = _last_employee_data_row(archive_ws, archive_layout) + 1
+            _copy_employee_row_clear_serial(
+                ws,
+                row_num,
+                archive_ws,
+                dst_row,
+                src_max_col=layout.max_col,
+                dst_layout=archive_layout,
+            )
+            ws.delete_rows(row_num, 1)
+            moved += 1
+        if moved == 0:
+            raise EmployeeExcelError(
+                "Не найдены выбранные сотрудники в файле Excel (возможно, список устарел — "
+                "нажмите «Обновить базы с диска»)."
+            )
+        _save_employees_workbook(wb, path)
+    finally:
+        wb.close()
+    return moved
+
+
+def restore_archived_employee_entries(
+    path: Path,
+    entries: list[ArchivedEmployeeEntry],
+    *,
+    backup: bool = True,
+) -> int:
+    """Вернуть на rabotnik строки архива по номерам строк Excel (как в диалоге «Архив…»)."""
+    if not entries:
+        return 0
+    path = Path(path)
+    if backup and path.is_file():
+        _backup_workbook_before_edit(path)
+    wb = _open_employees_workbook_for_edit(path)
+    restored = 0
+    try:
+        ws = _pick_employee_worksheet(wb, EMPLOYEES_SHEET_NAME)
+        main_layout = _analyze_employee_worksheet(ws)
+        by_sheet: dict[str, list[ArchivedEmployeeEntry]] = {}
+        for entry in entries:
+            by_sheet.setdefault(entry.sheet_name, []).append(entry)
+        for sheet_name, sheet_entries in by_sheet.items():
+            archive_ws, real_name = _find_archive_worksheet(wb, preferred_sheet=sheet_name)
+            if archive_ws is None or real_name is None:
+                continue
+            archive_layout = _analyze_employee_worksheet(archive_ws)
+            for entry in sorted(sheet_entries, key=lambda e: e.row_num, reverse=True):
+                row_num = entry.row_num
+                if row_num <= archive_layout.header_row:
+                    continue
+                row_vals = next(
+                    archive_ws.iter_rows(min_row=row_num, max_row=row_num, values_only=True),
+                    None,
+                )
+                if not row_vals:
+                    continue
+                if _employee_record_from_row_values(tuple(row_vals), archive_layout) is None:
+                    continue
+                dst_row = _last_employee_data_row(ws, main_layout) + 1
+                _copy_employee_row_clear_serial(
+                    archive_ws,
+                    row_num,
+                    ws,
+                    dst_row,
+                    src_max_col=archive_layout.max_col,
+                    dst_layout=main_layout,
+                )
+                archive_ws.delete_rows(row_num, 1)
+                restored += 1
+        if restored == 0:
+            raise EmployeeExcelError("Не найдены выбранные записи в листе архива.")
+        _save_employees_workbook(wb, path)
+    finally:
+        wb.close()
+    return restored
+
+
+def restore_employees_from_archive(
+    path: Path,
+    records: list[EmployeeRecord],
+    *,
+    backup: bool = True,
+) -> int:
+    """Вернуть сотрудников с листа архива на rabotnik (сопоставление: ФИО + должность)."""
+    if not records:
+        return 0
+    path = Path(path)
+    if backup and path.is_file():
+        _backup_workbook_before_edit(path)
+    wb = _open_employees_workbook_for_edit(path)
+    restored = 0
+    try:
+        ws = _pick_employee_worksheet(wb, EMPLOYEES_SHEET_NAME)
+        main_layout = _analyze_employee_worksheet(ws)
+        archive_ws, _archive_name = _find_archive_worksheet(wb)
+        if archive_ws is None:
+            raise EmployeeExcelError("Лист архива не найден (rabotnik_archive).")
+        archive_layout = _analyze_employee_worksheet(archive_ws)
+        targets = list(records)
+        archive_rows = _collect_employee_rows_from_sheet(archive_ws, archive_layout)
+        to_restore: list[tuple[int, EmployeeRecord]] = []
+        for row_num, rec in archive_rows:
+            if not targets:
+                break
+            match_idx = next(
+                (i for i, t in enumerate(targets) if _employee_archive_restore_match(t, rec)),
+                None,
+            )
+            if match_idx is None:
+                continue
+            targets.pop(match_idx)
+            to_restore.append((row_num, rec))
+        if not to_restore:
+            raise EmployeeExcelError(
+                "Не найдены выбранные записи в листе архива (ФИО и должность)."
+            )
+        if targets:
+            preview = "\n".join(
+                f"• {t.fio} — {t.profession or '?'}" for t in targets[:5]
+            )
+            extra = f"\n… и ещё {len(targets) - 5}." if len(targets) > 5 else ""
+            raise EmployeeExcelError(
+                "Не все выбранные записи найдены в архиве:\n" f"{preview}{extra}"
+            )
+        for row_num, _rec in sorted(to_restore, key=lambda item: item[0], reverse=True):
+            dst_row = _last_employee_data_row(ws, main_layout) + 1
+            _copy_employee_row_clear_serial(
+                archive_ws,
+                row_num,
+                ws,
+                dst_row,
+                src_max_col=archive_layout.max_col,
+                dst_layout=main_layout,
+            )
+            archive_ws.delete_rows(row_num, 1)
+            restored += 1
+        _save_employees_workbook(wb, path)
+    finally:
+        wb.close()
+    return restored
+

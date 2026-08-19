@@ -76,6 +76,44 @@ class TestMintrudExportV(unittest.TestCase):
         )
         self.assertEqual({r["position"] for r in rows}, {"Слесарь", "Электрик"})
 
+    def test_build_export_rows_b_one_row_per_block_b_profession(self) -> None:
+        meta = build_protocol_export_meta_json(
+            ["B"],
+            ["Программа Б"],
+            protocol_no_formatted="1-01-26",
+            persons_raw=[
+                EmployeeRecord(
+                    fio="Иванов Иван Иванович",
+                    profession="Слесарь",
+                    profession2="Электрик",
+                )
+            ],
+            persons_row_source=[
+                EmployeeRecord(fio="Иванов Иван Иванович", profession="Слесарь"),
+                EmployeeRecord(fio="Иванов Иван Иванович", profession="Электрик"),
+            ],
+        )
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            catalog = Path(tmp.name)
+        try:
+            with mock.patch(
+                "mintrud_export.get_cached_b_program_title",
+                return_value="Программа общая",
+            ):
+                with mock.patch(
+                    "mintrud_export.get_cached_v_registry_rows",
+                    return_value=[("1", "Программа общая", "", None)],
+                ):
+                    rows = build_export_rows(
+                        [self._record_with_meta(meta)],
+                        programs_excel_path=catalog,
+                    )
+        finally:
+            catalog.unlink(missing_ok=True)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r["program_name"] for r in rows}, {"Программа общая"})
+        self.assertEqual({r["position"] for r in rows}, {"Слесарь", "Электрик"})
+
     def test_build_export_rows_b_keeps_lookup_position_not_protocol_only(self) -> None:
         meta = build_protocol_export_meta_json(
             ["B"],

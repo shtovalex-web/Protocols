@@ -226,6 +226,27 @@ class TestWindowMaximizedDetection(unittest.TestCase):
         win = _FakeWindow(width=900, height=700)
         self.assertFalse(window_appears_maximized_or_fullscreen(win))
 
+    def test_apply_startup_geometry_maximized(self):
+        from ui_theme import apply_startup_geometry
+
+        class _Win(_FakeWindow):
+            def __init__(self) -> None:
+                super().__init__(width=900, height=700)
+                self.state_calls: list[str] = []
+
+            def state(self, arg: str) -> None:
+                self.state_calls.append(arg)
+
+            def minsize(self, _w: int, _h: int) -> None:
+                pass
+
+            def update_idletasks(self) -> None:
+                pass
+
+        win = _Win()
+        apply_startup_geometry(win, start_maximized=True)
+        self.assertIn("zoomed", win.state_calls)
+
 
 if __name__ == "__main__":
     unittest.main()
