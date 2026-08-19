@@ -20,14 +20,18 @@
 
 from __future__ import annotations
 
+import os
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from employees_io import EmployeeRecord
 from v_program_registry_match import fg_line_comparison_key
+
+TrainedRegistryPathStatus = Literal["not_set", "ok", "not_found", "inaccessible"]
 
 
 def _norm_header_cell(value: object) -> str:
@@ -371,12 +375,71 @@ def filter_candidates_for_program_block(
     return out
 
 
+def normalize_trained_registry_path(path: Path | str | None) -> Path | None:
+    """Путь к файлу реестра без resolve() — не зависает на недоступных сетевых каталогах."""
+    s = str(path or "").strip()
+    if not s:
+        return None
+    return Path(s).expanduser()
+
+
+def _path_is_readable_file(path: Path) -> bool:
+    try:
+        return path.is_file() and os.access(path, os.R_OK)
+    except OSError:
+        return False
+
+
+def check_trained_registry_file_access(
+    path: Path | str | None,
+    *,
+    timeout_sec: float = 2.5,
+) -> TrainedRegistryPathStatus:
+    """Проверка доступности файла реестра; при зависании сети — «inaccessible», не блокирует навсегда."""
+    p = normalize_trained_registry_path(path)
+    if p is None:
+        return "not_set"
+    result: list[bool | None] = [None]
+
+    def worker() -> None:
+        try:
+            result[0] = _path_is_readable_file(p)
+        except Exception:
+            result[0] = False
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(timeout_sec)
+    if t.is_alive():
+        return "inaccessible"
+    if result[0] is True:
+        return "ok"
+    return "not_found"
+
+
+def trained_registry_status_user_message(
+    status: TrainedRegistryPathStatus,
+    path: Path | str | None,
+) -> str:
+    p = str(path or "").strip()
+    if status == "not_set":
+        return "Файл не выбран — в протокол идут только номера из поля вручную."
+    if status == "ok":
+        return f"Используется: {p}"
+    if status == "not_found":
+        return f"Путь сохранён, файл не найден: {p}"
+    return f"Нет доступа к файлу реестра (сеть или права): {p}"
+
+
 def load_trained_registry_index(path: Path | None) -> TrainedRegistryIndex | None:
     """Читает первый лист .xlsx; при ошибке или отсутствии колонок — None."""
-    if path is None:
+    p = normalize_trained_registry_path(path)
+    if p is None:
         return None
-    p = Path(path).expanduser().resolve()
-    if not p.is_file():
+    try:
+        if not p.is_file():
+            return None
+    except OSError:
         return None
     try:
         from openpyxl import load_workbook

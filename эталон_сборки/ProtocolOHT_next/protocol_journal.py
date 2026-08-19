@@ -82,7 +82,7 @@ def save_protocol(
     *,
     protocol_kind: str = PROTOCOL_JOURNAL_KIND_OT,
 ) -> int:
-    """Сохранить запись журнала; при том же №/дате/виде — обновить, не дублировать."""
+    """Сохранить запись журнала; при том же №/дате/виде/должности — обновить, не дублировать."""
     kind = (protocol_kind or PROTOCOL_JOURNAL_KIND_OT).strip() or PROTOCOL_JOURNAL_KIND_OT
     with sqlite3.connect(database_path()) as conn:
         existing_id = _find_protocol_journal_id_for_update(
@@ -124,7 +124,7 @@ def _find_protocol_journal_id_for_update(
     export_meta_json: str | None,
     fio: str,
 ) -> int | None:
-    """Ключ перезаписи: вид + дата + № протокола из meta; иначе вид + дата + ФИО."""
+    """Ключ перезаписи: вид + дата + № протокола + должность из meta; иначе вид + дата + ФИО."""
     kind = (protocol_kind or PROTOCOL_JOURNAL_KIND_OT).strip() or PROTOCOL_JOURNAL_KIND_OT
     date_s = (date or "").strip()
     pn = export_meta_protocol_no(export_meta_json)
@@ -146,9 +146,14 @@ def _find_protocol_journal_id_for_update(
         )
     rows = cur.fetchall()
     if pn:
-        for rid, _fio, meta in rows:
-            if export_meta_protocol_no(meta) == pn:
+        pos_key = export_meta_journal_position_key(export_meta_json, fio)
+        for rid, row_fio, meta in rows:
+            if export_meta_protocol_no(meta) != pn:
+                continue
+            existing_pos = export_meta_journal_position_key(meta, row_fio or "")
+            if existing_pos == pos_key:
                 return int(rid)
+        return None
     nf = _norm_fio_journal_key(fio)
     if nf:
         for rid, row_fio, _meta in rows:
@@ -163,7 +168,11 @@ def _journal_row_dedupe_key(record: dict[str, Any]) -> tuple[str, str, str]:
     date_s = (record.get("date") or "").strip()
     pn = export_meta_protocol_no(record.get("export_meta_json"))
     if pn:
-        return (kind, date_s, f"no:{pn.casefold()}")
+        pos = export_meta_journal_position_key(
+            record.get("export_meta_json"),
+            record.get("fio") or "",
+        )
+        return (kind, date_s, f"no:{pn.casefold()}:{pos}")
     nf = _norm_fio_journal_key(record.get("fio") or "")
     return (kind, date_s, f"fio:{nf}")
 
@@ -288,6 +297,57 @@ def export_meta_protocol_no(meta_json: str | None) -> str:
         return (v if isinstance(v, str) else str(v or "")).strip()
     except (json.JSONDecodeError, TypeError, AttributeError):
         return ""
+
+
+def _norm_position_journal_key(s: str) -> str:
+    t = (s or "").strip().lower().replace("ё", "е")
+    return re.sub(r"\s+", " ", t)
+
+
+def export_meta_journal_position_key(
+    meta_json: str | None,
+    fio: str = "",
+) -> str:
+    """Основная должность протокола для ключа upsert (титул / совмещения)."""
+    if not meta_json:
+        return ""
+    try:
+        d = json.loads(meta_json)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(d, dict):
+        return ""
+
+    fs = str(d.get("face_sheet_profession") or "").strip()
+    if fs:
+        return _norm_position_journal_key(fs)
+
+    main_raw = d.get("v_prof_main_by_fio")
+    if isinstance(main_raw, dict) and main_raw:
+        fio_key = _norm_fio_journal_key(fio)
+        for k, v in main_raw.items():
+            if _norm_fio_journal_key(str(k)) == fio_key:
+                mv = str(v or "").strip()
+                if mv:
+                    return _norm_position_journal_key(mv)
+        if not fio_key and len(main_raw) == 1:
+            only = next(iter(main_raw.values()))
+            if str(only or "").strip():
+                return _norm_position_journal_key(str(only))
+
+    persons_raw = d.get("persons_raw")
+    if isinstance(persons_raw, list):
+        fio_key = _norm_fio_journal_key(fio)
+        for item in persons_raw:
+            if not isinstance(item, dict):
+                continue
+            item_fio = _norm_fio_journal_key(str(item.get("fio") or ""))
+            if fio_key and item_fio != fio_key:
+                continue
+            pr = str(item.get("profession") or "").strip()
+            if pr:
+                return _norm_position_journal_key(pr)
+    return ""
 
 
 def journal_kind_label(protocol_kind: str | None) -> str:

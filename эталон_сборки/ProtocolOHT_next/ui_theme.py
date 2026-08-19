@@ -561,13 +561,71 @@ def apply_theme_to_window(win: tk.Misc) -> ttk.Style:
     return style
 
 
+def window_appears_maximized_or_fullscreen(
+    win: tk.Misc,
+    *,
+    margin_w: int = 64,
+    margin_h: int = 96,
+) -> bool:
+    """Окно развёрнуто WM или занимает почти весь экран (не трогать geometry)."""
+    try:
+        if str(win.wm_state()).lower() == "zoomed":
+            return True
+    except tk.TclError:
+        pass
+    try:
+        if bool(win.attributes("-zoomed")):
+            return True
+    except tk.TclError:
+        pass
+    try:
+        win.update_idletasks()
+        sw = int(win.winfo_screenwidth())
+        sh = int(win.winfo_screenheight())
+        ww = int(win.winfo_width())
+        wh = int(win.winfo_height())
+    except tk.TclError:
+        return False
+    if ww < 200 or wh < 200:
+        return False
+    return ww >= sw - margin_w and wh >= sh - margin_h
+
+
+def maximize_window(win: tk.Misc) -> None:
+    """Развернуть окно на весь экран (Windows: zoomed; Linux: атрибут или geometry)."""
+    try:
+        win.update_idletasks()
+    except tk.TclError:
+        pass
+    try:
+        win.state("zoomed")
+        return
+    except tk.TclError:
+        pass
+    try:
+        win.attributes("-zoomed", True)
+        return
+    except tk.TclError:
+        pass
+    try:
+        sw = int(win.winfo_screenwidth())
+        sh = int(win.winfo_screenheight())
+        win.geometry(f"{sw}x{sh}+0+0")
+    except tk.TclError:
+        pass
+
+
 def apply_startup_geometry(
     win: tk.Misc,
     *,
     min_width: int = 900,
     min_height: int = 560,
+    start_maximized: bool = True,
 ) -> None:
     win.minsize(min_width, min_height)
+    if start_maximized:
+        maximize_window(win)
+        return
     _center_window(
         win,
         min_width=min(min_width + 80, win.winfo_screenwidth() - 40),

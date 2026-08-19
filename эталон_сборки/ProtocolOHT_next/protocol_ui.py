@@ -45,15 +45,20 @@ from employees_io import (
     EmployeeRecord,
     PROGRAMS_EXCEL_FILENAME,
     TechVProgramInfo,
+    add_employee_to_excel,
+    archive_employees_in_excel,
     copy_program_sheets_from_workbook,
     format_fio_filename_surname_initials,
     listbox_label_for_employee,
     listbox_subdivision_header,
+    load_archived_employees_from_excel,
+    restore_employees_from_archive,
     subdivision_group_key,
     load_all_tech_v_programs_from_excel,
     load_employees_from_excel,
     sort_employees_by_subdivision_then_fio,
 )
+from employee_editor_dialog import EmployeeArchiveDialog, EmployeeFormDialog
 from excel_data_cache import (
     get_cached_b_program_title,
     get_cached_pp_table_title,
@@ -78,7 +83,12 @@ from v_prof_combinations import (
     selection_signature,
 )
 from mintrud_export import write_mintrud_template_xlsx
-from mintrud_trained_registry import load_trained_registry_index
+from mintrud_trained_registry import (
+    check_trained_registry_file_access,
+    load_trained_registry_index,
+    normalize_trained_registry_path,
+    trained_registry_status_user_message,
+)
 from protocol_docx import (
     B_PROGRAM_SHEET_NAME,
     PROTOCOL_BODY_FONT_PT,
@@ -109,6 +119,7 @@ from protocol_docx import (
     save_protocol_docx_from_template,
     v_program_merged_parts_for_raw_employee,
     v_program_ordered_unique_parts_global,
+    professions_for_v_prof_matrix_lookup,
 )
 from protocol_errors import append_error_journal
 from protocol_journal import (
@@ -117,6 +128,7 @@ from protocol_journal import (
     build_protocol_export_meta_json,
     clear_protocol_journal,
     default_journal_registry_export_path,
+    delete_protocol_journal_rows_by_ids,
     export_meta_protocol_no,
     export_protocol_journal_registry,
     format_journal_list_line,
@@ -153,6 +165,7 @@ from ui_theme import (
     apply_startup_geometry,
     apply_theme_to_window,
     color_scheme_choices,
+    configure_editable_text,
     configure_listbox,
     configure_readonly_text,
     current_color_scheme_id,
@@ -162,6 +175,7 @@ from ui_theme import (
     SPACING,
     SPACING_LG,
     SPACING_SM,
+    window_appears_maximized_or_fullscreen,
 )
 from ui_widgets import WidgetTooltip, attach_tooltip
 
@@ -240,10 +254,14 @@ def render_document_to_text_widget(widget: tk.Text, doc: Document) -> None:
 
 GRADE_OPTIONS = ("удовлетворительно", "неудовлетворительно")
 CHECK_TYPE_OPTIONS = ("плановая", "внеплановая")
-# Ширина полей формы (символы): длинные должности из V_PROF не обрезаются.
+# Поля участника: одна ширина (колонка «Участник»), должность — 2 строки с переносом.
 MAIN_FORM_ENTRY_CHARS = 72
+PROFESSION_TEXT_LINES = 2
+V_PROF_SUGGEST_LIST_MAX_LINES = 8
+V_PROF_SUGGEST_LIST_MIN_LINES = 2
 MAIN_WINDOW_MIN_WIDTH = 900
 MAIN_WINDOW_MIN_HEIGHT = 560
+EMPLOYEE_COLUMN_MINSIZE = 288
 EMPLOYEE_LIST_HEIGHT_NORMAL = 16
 EMPLOYEE_LIST_HEIGHT_TECH = 8
 # Текст в окне журнала, если в записи не сохранён content (намеренно).
@@ -348,6 +366,41 @@ class ProtocolApp(tk.Tk):
         )
         if journal_duplicates_removed > 0:
             self.after(400, lambda: self._maybe_notify_journal_purge(journal_duplicates_removed))
+        self.after(550, self._maybe_warn_trained_registry_at_startup)
+        self.after(500, self._maybe_show_pending_changelog)
+
+    def _maybe_warn_trained_registry_at_startup(self) -> None:
+        """Недоступный файл реестра — предупреждение и предложение указать другой путь, без блокировки запуска."""
+        s = load_mintrud_trained_registry_path().strip()
+        if not s:
+            return
+        status = check_trained_registry_file_access(s)
+        self._refresh_mintrud_registry_label(verify_access=True, access_status=status)
+        if status == "ok":
+            return
+        msg = (
+            "Сохранён файл реестра обученных Минтруда, но он сейчас недоступен.\n\n"
+            f"{trained_registry_status_user_message(status, s)}\n\n"
+            "Программа работает без реестра (номера в протокол — только вручную).\n\n"
+            "Указать другой файл реестра сейчас?"
+        )
+        if messagebox.askyesno("Реестр обученных", msg, parent=self):
+            self._pick_mintrud_trained_registry(self)
+
+    def _maybe_show_pending_changelog(self) -> None:
+        from changelog_dialog import show_changelog_dialog
+        from pending_changelog import pop_pending_changelog
+        from startup_update import current_exe_path
+        from update_info import data_dir_for_exe
+
+        exe = current_exe_path()
+        if exe is None:
+            return
+        pending = pop_pending_changelog(data_dir_for_exe(exe))
+        if pending is None:
+            return
+        version, changes = pending
+        show_changelog_dialog(version, changes, parent=self)
 
     def _maybe_notify_journal_purge(self, removed: int) -> None:
         if removed <= 0:
@@ -375,10 +428,32 @@ class ProtocolApp(tk.Tk):
         except tk.TclError:
             pass
 
+    def _get_position_text(self) -> str:
+        w = self.entry_position
+        if isinstance(w, tk.Text):
+            return " ".join(w.get("1.0", "end-1c").split())
+        return w.get().strip()
+
+    def _set_position_text(self, value: str) -> None:
+        text = (value or "").strip()
+        w = self.entry_position
+        if isinstance(w, tk.Text):
+            w.delete("1.0", tk.END)
+            w.insert("1.0", text)
+        else:
+            w.delete(0, tk.END)
+            w.insert(0, text)
+
+    def _set_readonly_multiline_text(self, widget: tk.Text, value: str) -> None:
+        widget.configure(state=tk.NORMAL)
+        widget.delete("1.0", tk.END)
+        widget.insert("1.0", (value or "").strip())
+        widget.configure(state=tk.DISABLED)
+
     def _face_sheet_profession(self) -> str:
         """Должность с лицевой части формы (в т.ч. подмена из матрицы V_PROF)."""
         if hasattr(self, "entry_position"):
-            return self.entry_position.get().strip()
+            return self._get_position_text()
         return ""
 
     def _v_prof_combo_kwargs(self) -> dict[str, object]:
@@ -401,50 +476,13 @@ class ProtocolApp(tk.Tk):
         self._v_prof_combo_selection_sig = None
 
     def _professions_for_v_prof_hint(self) -> list[str]:
-        """Должности для подсказки V_PROF: по каждому выбранному сотруднику."""
-        cfg = self._v_prof_combo_config
-        if cfg and cfg.enabled_by_fio:
-            out: list[str] = []
-            seen: set[str] = set()
-            for _fk, main in cfg.main_by_fio.items():
-                t = (main or "").strip()
-                if t and t.lower() not in seen:
-                    seen.add(t.lower())
-                    out.append(t)
-            for rec in self._collect_table_persons():
-                from v_program_registry_match import norm_profession_key
-
-                fk = norm_profession_key(rec.fio or "")
-                enabled = cfg.enabled_by_fio.get(fk)
-                if enabled is None:
-                    continue
-                for pr in (rec.profession, rec.profession2):
-                    t = (pr or "").strip()
-                    if not t or norm_profession_key(t) not in enabled:
-                        continue
-                    k = t.lower()
-                    if k in seen:
-                        continue
-                    seen.add(k)
-                    out.append(t)
-            return out
-        out2: list[str] = []
-        seen2: set[str] = set()
-        fs = self._face_sheet_profession()
-        if fs:
-            out2.append(fs)
-            seen2.add(fs.strip().lower())
-        for rec in self._collect_table_persons():
-            for pr in (rec.profession, rec.profession2):
-                t = (pr or "").strip()
-                if not t:
-                    continue
-                k = t.lower()
-                if k in seen2:
-                    continue
-                seen2.add(k)
-                out2.append(t)
-        return out2
+        """Должности для подсказки V_PROF (та же логика, что при сборке протокола «В»)."""
+        return professions_for_v_prof_matrix_lookup(
+            self._collect_table_persons_merged_by_fio(),
+            face_sheet_profession=self._face_sheet_profession() or None,
+            persons_row_source=self._collect_table_persons() or None,
+            **self._v_prof_combo_kwargs(),
+        )
 
     def _configure_v_prof_combinations(self, persons_raw: list[EmployeeRecord]) -> bool:
         """
@@ -479,8 +517,7 @@ class ProtocolApp(tk.Tk):
             only_key = groups[0][0]
             main_one = result.main_by_fio.get(only_key, "")
             if main_one:
-                self.entry_position.delete(0, tk.END)
-                self.entry_position.insert(0, main_one)
+                self._set_position_text(main_one)
                 self._refresh_v_prof_profession_hint(main_one)
         else:
             self._refresh_v_prof_profession_hint()
@@ -554,8 +591,10 @@ class ProtocolApp(tk.Tk):
 
     def _fit_main_window_to_form(self) -> None:
         """Подогнать высоту главного окна под форму (расширить или сжать)."""
+        self.minsize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
+        if window_appears_maximized_or_fullscreen(self):
+            return
         if not self.var_technical_protocol.get():
-            self.minsize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
             self._apply_main_window_geometry()
             return
         self.update_idletasks()
@@ -566,9 +605,8 @@ class ProtocolApp(tk.Tk):
         cur_w = max(self.winfo_width(), MAIN_WINDOW_MIN_WIDTH)
         cur_x = self.winfo_x()
         cur_y = self.winfo_y()
-        if abs(self.winfo_height() - target_h) > 6:
+        if self.winfo_height() < target_h - 6:
             self.geometry(f"{cur_w}x{target_h}+{cur_x}+{cur_y}")
-        self.minsize(MAIN_WINDOW_MIN_WIDTH, min(target_h, cap_h))
 
     def _themed_toplevel(self, parent: tk.Misc | None = None) -> tk.Toplevel:
         """Дочернее окно с той же темой, что и главное (clam, поля, скругление)."""
@@ -635,26 +673,8 @@ class ProtocolApp(tk.Tk):
         self._restore_parent_modal(parent if parent is not None else self)
 
     def _ensure_main_window_width_for_text(self, *texts: str) -> None:
-        """Расширить главное окно, если длинный текст (должность V_PROF) не помещается."""
-        samples = [t for t in texts if (t or "").strip()]
-        if not samples:
-            return
-        try:
-            fnt = tkfont.Font(font=self.entry_position.cget("font"))
-        except tk.TclError:
-            fnt = tkfont.Font(family=UI.family, size=10)
-        text_px = max(fnt.measure(t) for t in samples)
-        want_w = min(
-            max(MAIN_WINDOW_MIN_WIDTH, text_px + 300),
-            self.winfo_screenwidth() - 32,
-        )
-        self.update_idletasks()
-        if self.winfo_width() < want_w - 12:
-            h = max(self.winfo_height(), self.minsize()[1])
-            x = max(0, min(self.winfo_x(), self.winfo_screenwidth() - want_w - 8))
-            y = self.winfo_y()
-            self.geometry(f"{want_w}x{h}+{x}+{y}")
-        self.minsize(min(want_w, self.winfo_screenwidth() - 32), self.minsize()[1])
+        """Расширение окна под длинный текст отключено — ширина колонок фиксирована."""
+        return
 
     def _apply_main_window_geometry(self) -> None:
         self._fit_window_geometry(
@@ -797,11 +817,20 @@ class ProtocolApp(tk.Tk):
             label="Журнал доработок…",
             command=lambda: open_changelog_window(self),
         )
+        help_m.add_command(
+            label="Проверить обновления…",
+            command=self._check_for_updates,
+        )
         help_m.add_separator()
         help_m.add_command(
             label="О программе…",
             command=self._show_about_window,
         )
+
+    def _check_for_updates(self) -> None:
+        from startup_update import check_updates_interactive
+
+        check_updates_interactive(parent=self)
 
     def _show_hotkeys_help(self) -> None:
         messagebox.showinfo(
@@ -879,8 +908,8 @@ class ProtocolApp(tk.Tk):
 
         lf = ttk.Labelframe(main, text="Формирование протокола", style="Card.TLabelframe")
         lf.grid(row=1, column=0, sticky=tk.NSEW, **g)
-        lf.columnconfigure(0, weight=2, minsize=280)
-        lf.columnconfigure(1, weight=3, minsize=360)
+        lf.columnconfigure(0, weight=0, minsize=EMPLOYEE_COLUMN_MINSIZE)
+        lf.columnconfigure(1, weight=1, minsize=360)
         lf.rowconfigure(1, weight=1)
         lf.rowconfigure(2, weight=0)
 
@@ -937,6 +966,22 @@ class ProtocolApp(tk.Tk):
             "Сотрудники по подразделениям: щёлкните строку «▾ название (N)» — свернуть/развернуть группу. "
             "Ctrl и Shift — выбор нескольких сотрудников.",
         )
+        emp_btns = ttk.Frame(emp_lf)
+        emp_btns.grid(row=1, column=0, sticky=tk.W, pady=(SPACING_SM, 0))
+        ttk.Button(emp_btns, text="Добавить…", command=self._add_employee_clicked).grid(
+            row=0, column=0, padx=(0, 6)
+        )
+        ttk.Button(emp_btns, text="В архив…", command=self._archive_employees_clicked).grid(
+            row=0, column=1, padx=(0, 6)
+        )
+        ttk.Button(emp_btns, text="Архив…", command=self._open_employee_archive_dialog).grid(
+            row=0, column=2, padx=(0, 6)
+        )
+        _attach_tooltip(
+            emp_btns,
+            "Добавить — новая строка в Data_base.xlsx; «В архив» — перенос выбранных "
+            "на лист rabotnik_archive; «Архив» — восстановление из архива.",
+        )
 
         right_col = ttk.Frame(lf)
         right_col.grid(row=1, column=1, sticky=tk.NSEW)
@@ -955,41 +1000,77 @@ class ProtocolApp(tk.Tk):
         )
 
         ttk.Label(person_lf, text="Должность:").grid(row=1, column=0, sticky=tk.NW, **g_sm)
-        pos_col = ttk.Frame(person_lf)
-        pos_col.grid(row=1, column=1, sticky=tk.EW, **g_sm)
-        pos_col.columnconfigure(0, weight=1)
-        self.entry_position = ttk.Entry(pos_col, style="Field.TEntry")
-        self.entry_position.grid(row=0, column=0, columnspan=2, sticky=tk.EW)
-        self.lbl_v_prof_match = ttk.Label(pos_col, text="", style="Hint.TLabel")
-        self.lbl_v_prof_match.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
+        self._pos_col = ttk.Frame(person_lf)
+        self._pos_col.grid(row=1, column=1, sticky=tk.NSEW, **g_sm)
+        self._pos_col.columnconfigure(0, weight=1)
+        self.entry_position = tk.Text(
+            self._pos_col,
+            height=PROFESSION_TEXT_LINES,
+            width=1,
+            wrap=tk.WORD,
+            undo=True,
+            relief=tk.FLAT,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        configure_editable_text(self.entry_position)
+        self.entry_position.grid(row=0, column=0, sticky=tk.EW)
+        self.lbl_v_prof_match = ttk.Label(
+            self._pos_col,
+            text="",
+            style="Hint.TLabel",
+            wraplength=360,
+            justify=tk.LEFT,
+        )
+        self.lbl_v_prof_match.grid(row=1, column=0, sticky=tk.EW, pady=(2, 0))
         self._v_prof_match_tooltip = _WidgetTooltip(self.lbl_v_prof_match, "")
-        self._v_prof_suggest_fr = ttk.Frame(pos_col)
-        self._v_prof_suggest_fr.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=(2, 0))
-        self._v_prof_suggest_fr.columnconfigure(1, weight=1)
-        self._v_prof_suggest_professions: dict[str, str] = {}
-        ttk.Label(self._v_prof_suggest_fr, text="V_PROF:", style="Hint.TLabel").grid(
-            row=0, column=0, sticky=tk.W, padx=(0, 4)
-        )
-        self.cmb_v_prof_suggest = ttk.Combobox(
+        self._pos_col.bind("<Configure>", self._sync_profession_block_wraplength)
+        self._v_prof_suggest_fr = ttk.Frame(self._pos_col)
+        self._v_prof_suggest_fr.grid(row=2, column=0, sticky=tk.NSEW, pady=(4, 0))
+        self._v_prof_suggest_fr.columnconfigure(0, weight=1)
+        self._v_prof_suggest_professions: list[str] = []
+        ttk.Label(
             self._v_prof_suggest_fr,
-            state="readonly",
-            font=UI.font_body,
+            text="Похожие профессии:",
+            style="Hint.TLabel",
+        ).grid(row=0, column=0, sticky=tk.W, pady=(0, 2))
+        v_prof_list_fr = ttk.Frame(self._v_prof_suggest_fr)
+        v_prof_list_fr.grid(row=1, column=0, sticky=tk.NSEW)
+        v_prof_list_fr.columnconfigure(0, weight=1)
+        v_prof_list_fr.rowconfigure(0, weight=1)
+        self._v_prof_suggest_sb = ttk.Scrollbar(v_prof_list_fr, orient=tk.VERTICAL)
+        self.lst_v_prof_suggest = tk.Listbox(
+            v_prof_list_fr,
+            height=V_PROF_SUGGEST_LIST_MIN_LINES,
+            width=1,
+            exportselection=False,
+            activestyle=tk.NONE,
+            yscrollcommand=self._v_prof_suggest_sb.set,
         )
-        self.cmb_v_prof_suggest.grid(row=0, column=1, sticky=tk.EW)
+        configure_listbox(self.lst_v_prof_suggest)
+        self.lst_v_prof_suggest.grid(row=0, column=0, sticky=tk.NSEW)
+        self._v_prof_suggest_sb.grid(row=0, column=1, sticky=tk.NS)
+        self._v_prof_suggest_sb.configure(command=self.lst_v_prof_suggest.yview)
+        self.lst_v_prof_suggest.bind("<Double-Button-1>", self._on_v_prof_suggest_activate)
+        v_prof_btns = ttk.Frame(self._v_prof_suggest_fr)
+        v_prof_btns.grid(row=2, column=0, sticky=tk.E, pady=(4, 0))
         self.btn_v_prof_apply = ttk.Button(
-            self._v_prof_suggest_fr,
+            v_prof_btns,
             text="Подставить",
             command=self._apply_v_prof_profession_from_combo,
             width=11,
             style="Small.TButton",
         )
-        self.btn_v_prof_apply.grid(row=0, column=2, sticky=tk.W, padx=(4, 0))
+        self.btn_v_prof_apply.pack(side=tk.RIGHT)
         _attach_tooltip(
-            self.cmb_v_prof_suggest,
-            "Похожие профессии из V_PROF (по 1–2 первым словам должности). «Подставить» — в поле.",
+            self.lst_v_prof_suggest,
+            "Похожие профессии из V_PROF (полные названия). "
+            "Выберите строку и «Подставить» или двойной щелчок.",
         )
         self._v_prof_suggest_fr.grid_remove()
+        self._v_prof_suggest_sb.grid_remove()
         self.entry_position.bind("<FocusOut>", self._on_position_focus_out)
+        self.entry_position.bind("<Return>", lambda _e: "break")
         _attach_tooltip(
             self.entry_position,
             "Основная должность для программ «В» (для одного выбранного — здесь; "
@@ -1325,7 +1406,7 @@ class ProtocolApp(tk.Tk):
     def _open_admin_window(self) -> None:
         if self._admin_win is None:
             return
-        self._refresh_mintrud_registry_label()
+        self._refresh_mintrud_registry_label(verify_access=True)
         self._refresh_employees_file_label()
         self._refresh_programs_file_label()
         self._refresh_technical_template_labels()
@@ -1498,6 +1579,12 @@ class ProtocolApp(tk.Tk):
         ttk.Button(eb, text="Файл сотрудников…", command=self.pick_employees_excel).grid(
             row=0, column=1, sticky=tk.W, padx=(0, 8)
         )
+        ttk.Button(eb, text="Добавить сотрудника…", command=self._add_employee_clicked).grid(
+            row=0, column=2, sticky=tk.W, padx=(0, 8)
+        )
+        ttk.Button(eb, text="Архив сотрудников…", command=self._open_employee_archive_dialog).grid(
+            row=0, column=3, sticky=tk.W, padx=(0, 8)
+        )
         self.lbl_employees_file = ttk.Label(lf_ex, text="", wraplength=520)
         self.lbl_employees_file.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(6, 0))
 
@@ -1663,7 +1750,12 @@ class ProtocolApp(tk.Tk):
             row=0, column=2, sticky=tk.W
         )
 
-    def _refresh_mintrud_registry_label(self) -> None:
+    def _refresh_mintrud_registry_label(
+        self,
+        *,
+        verify_access: bool = False,
+        access_status: str | None = None,
+    ) -> None:
         if not hasattr(self, "lbl_mintrud_registry"):
             return
         s = load_mintrud_trained_registry_path().strip()
@@ -1672,13 +1764,13 @@ class ProtocolApp(tk.Tk):
                 text="Файл не выбран — в протокол идут только номера из поля вручную.",
             )
             return
-        p = Path(s).expanduser()
-        if p.is_file():
-            self.lbl_mintrud_registry.configure(text=f"Используется: {p}")
-        else:
-            self.lbl_mintrud_registry.configure(
-                text=f"Путь сохранён, файл не найден: {s}",
-            )
+        if not verify_access:
+            self.lbl_mintrud_registry.configure(text=f"Сохранён путь: {s}")
+            return
+        status = access_status or check_trained_registry_file_access(s)
+        self.lbl_mintrud_registry.configure(
+            text=trained_registry_status_user_message(status, s)
+        )
 
     def _should_offer_mintrud_registry_reform(self) -> bool:
         """Есть ли уже сформированный протокол в окне — имеет смысл предложить обновить номера реестра."""
@@ -1718,8 +1810,8 @@ class ProtocolApp(tk.Tk):
         if not path:
             return
         save_mintrud_trained_registry_path(path)
-        self._refresh_mintrud_registry_label()
-        idx = load_trained_registry_index(Path(path))
+        self._refresh_mintrud_registry_label(verify_access=True)
+        idx = load_trained_registry_index(normalize_trained_registry_path(path))
         if idx is None:
             messagebox.showwarning(
                 "Реестр",
@@ -1749,8 +1841,9 @@ class ProtocolApp(tk.Tk):
         s = load_mintrud_trained_registry_path().strip()
         if not s:
             return None
-        p = Path(s).expanduser()
-        return p if p.is_file() else None
+        if check_trained_registry_file_access(s) != "ok":
+            return None
+        return normalize_trained_registry_path(s)
 
     def _table_fill_warning_text(self) -> str:
         if self.var_technical_protocol.get():
@@ -2313,7 +2406,8 @@ class ProtocolApp(tk.Tk):
                 "Реквизиты работодателя и организации 2 — «Минтруд» → «Реквизиты работодателя…». "
                 "В списке — по одной актуальной записи на протокол (без дублей). "
                 "Повторная выгрузка формирует новый файл из выбранных записей, "
-                "не дополняет ранее сохранённый Excel."
+                "не дополняет ранее сохранённый Excel. "
+                "Неверные записи можно удалить кнопкой «Удалить выбранные…»."
             ),
             wraplength=880,
             style="Muted.TLabel",
@@ -2372,6 +2466,38 @@ class ProtocolApp(tk.Tk):
         def select_none() -> None:
             lb.selection_clear(0, tk.END)
 
+        def delete_selected() -> None:
+            sel = lb.curselection()
+            if not sel:
+                messagebox.showinfo(
+                    "Удаление",
+                    "Выберите в списке одну или несколько записей для удаления.",
+                    parent=win,
+                )
+                return
+            chosen = [rows[int(i)] for i in sel]
+            preview_lines = [format_journal_list_line(r) for r in chosen[:5]]
+            extra = ""
+            if len(chosen) > 5:
+                extra = f"\n… и ещё {len(chosen) - 5}."
+            if not messagebox.askyesno(
+                "Удаление записей",
+                f"Удалить из журнала выбранные записи ({len(chosen)} шт.)?\n\n"
+                + "\n".join(preview_lines)
+                + extra
+                + "\n\nЗапись исчезнет из списка выгрузки. Действие нельзя отменить.",
+                parent=win,
+            ):
+                return
+            ids = [int(r["id"]) for r in chosen if r.get("id")]
+            try:
+                n = delete_protocol_journal_rows_by_ids(ids)
+            except sqlite3.Error as e:
+                messagebox.showerror("База данных", str(e), parent=win)
+                return
+            refresh_list()
+            messagebox.showinfo("Удаление", f"Удалено записей: {n}.", parent=win)
+
         def show_mintrud_help() -> None:
             hw = self._themed_toplevel(win)
             self._apply_embedded_window_icon(hw)
@@ -2401,6 +2527,8 @@ class ProtocolApp(tk.Tk):
                 "Список записей — без дублей (актуальная версия каждого протокола). "
                 "Сохранённый Excel не дополняется автоматически — каждый раз формируется "
                 "из выбранных строк журнала.\n\n"
+                "Неверно сформированный протокол можно удалить из списка кнопкой "
+                "«Удалить выбранные…» (запись удаляется из журнала базы).\n\n"
                 "При необходимости вручную: ID программы в реестре — по инструкции портала "
                 "(например https://akot.rosmintrud.ru/ ).",
             )
@@ -2480,13 +2608,16 @@ class ProtocolApp(tk.Tk):
         ttk.Button(btn_bar, text="Снять выбор", command=select_none).grid(
             row=0, column=2, padx=(0, 6)
         )
-        ttk.Button(btn_bar, text="Сформировать шаблон Excel…", command=export_template).grid(
+        ttk.Button(btn_bar, text="Удалить выбранные…", command=delete_selected).grid(
             row=0, column=3, padx=(0, 6)
         )
-        ttk.Button(btn_bar, text="Справка…", command=show_mintrud_help).grid(
+        ttk.Button(btn_bar, text="Сформировать шаблон Excel…", command=export_template).grid(
             row=0, column=4, padx=(0, 6)
         )
-        ttk.Button(btn_bar, text="Закрыть", command=lambda: self._close_modal_window(win)).grid(row=0, column=5)
+        ttk.Button(btn_bar, text="Справка…", command=show_mintrud_help).grid(
+            row=0, column=5, padx=(0, 6)
+        )
+        ttk.Button(btn_bar, text="Закрыть", command=lambda: self._close_modal_window(win)).grid(row=0, column=6)
 
         if rows:
             for r in rows:
@@ -2696,6 +2827,109 @@ class ProtocolApp(tk.Tk):
                     parent=par,
                 )
 
+    def _selected_employee_records(self) -> list[EmployeeRecord]:
+        sel = [int(i) for i in self.list_employees.curselection()]
+        out: list[EmployeeRecord] = []
+        for li in sel:
+            if li < 0 or li >= len(self._employee_list_slot_gi):
+                continue
+            gi = self._employee_list_slot_gi[li]
+            if gi is None:
+                continue
+            if 0 <= gi < len(self._employee_records):
+                out.append(self._employee_records[gi])
+        return out
+
+    def _after_employees_excel_changed(self, *, action_note: str = "") -> None:
+        path = self._employees_file_resolved()
+        try:
+            invalidate_employees_cache_for_path(path)
+        except OSError:
+            pass
+        refresh_commission_pool_from_excel(
+            self._commission_state,
+            path,
+            show_errors=False,
+            parent=self,
+        )
+        self._sync_and_refresh_commission_pool_listboxes()
+        self.reload_employees(show_errors=True)
+        note = action_note.strip()
+        if note:
+            messagebox.showinfo("Сотрудники", note, parent=self)
+
+    def _add_employee_clicked(self) -> None:
+        def on_submit(record: EmployeeRecord) -> None:
+            path = self._employees_file_resolved()
+            try:
+                n = add_employee_to_excel(path, record)
+            except EmployeeExcelError as e:
+                messagebox.showerror("Сотрудники Excel", str(e), parent=self)
+                return
+            note = f"Сотрудник добавлен в файл:\n{record.fio}"
+            if n > 1:
+                note += f"\n\nДобавлено строк: {n} (основная должность и совмещение)."
+            self._after_employees_excel_changed(action_note=note)
+
+        EmployeeFormDialog(
+            self,
+            on_submit=on_submit,
+            themed_toplevel=self._themed_toplevel,
+            make_modal=self._make_modal,
+        )
+
+    def _archive_employees_clicked(self) -> None:
+        chosen = self._selected_employee_records()
+        if not chosen:
+            messagebox.showinfo(
+                "Архив",
+                "Выберите одного или нескольких сотрудников в списке.",
+                parent=self,
+            )
+            return
+        preview = "\n".join(f"• {r.fio}" for r in chosen[:8])
+        extra = f"\n… и ещё {len(chosen) - 8}." if len(chosen) > 8 else ""
+        if not messagebox.askyesno(
+            "Перенос в архив",
+            f"Перенести в архив (лист rabotnik_archive) выбранных сотрудников ({len(chosen)} шт.)?\n\n"
+            f"{preview}{extra}\n\n"
+            "Строки будут удалены с листа rabotnik; восстановление — кнопка «Архив…».",
+            parent=self,
+        ):
+            return
+        path = self._employees_file_resolved()
+        try:
+            n = archive_employees_in_excel(path, chosen)
+        except EmployeeExcelError as e:
+            messagebox.showerror("Сотрудники Excel", str(e), parent=self)
+            return
+        self._after_employees_excel_changed(action_note=f"В архив перенесено записей: {n}.")
+
+    def _open_employee_archive_dialog(self) -> None:
+        path = self._employees_file_resolved()
+        try:
+            archived = load_archived_employees_from_excel(path)
+        except EmployeeExcelError as e:
+            messagebox.showerror("Архив сотрудников", str(e), parent=self)
+            return
+        sort_employees_by_subdivision_then_fio(archived)
+
+        def on_restore(records: list[EmployeeRecord]) -> None:
+            try:
+                n = restore_employees_from_archive(path, records)
+            except EmployeeExcelError as e:
+                messagebox.showerror("Архив сотрудников", str(e), parent=self)
+                return
+            self._after_employees_excel_changed(action_note=f"Из архива восстановлено: {n}.")
+
+        EmployeeArchiveDialog(
+            self,
+            archived,
+            on_restore=on_restore,
+            themed_toplevel=self._themed_toplevel,
+            make_modal=self._make_modal,
+        )
+
     def _rebuild_employee_search_blobs(self) -> None:
         """Один раз на загрузку: нижний регистр для быстрого поиска по списку."""
         self._employee_search_blobs = [
@@ -2871,8 +3105,7 @@ class ProtocolApp(tk.Tk):
         if gi is None:
             return
         rec = self._employee_records[gi]
-        self.entry_position.delete(0, tk.END)
-        self.entry_position.insert(0, rec.profession)
+        self._set_position_text(rec.profession)
         self.entry_subdivision.delete(0, tk.END)
         self.entry_subdivision.insert(0, rec.subdivision)
         self._refresh_v_prof_profession_hint(rec.profession)
@@ -2880,50 +3113,68 @@ class ProtocolApp(tk.Tk):
     def _on_position_focus_out(self, _event: object | None = None) -> None:
         self._refresh_v_prof_profession_hint()
 
+    def _sync_profession_block_wraplength(self, _event: object | None = None) -> None:
+        if not hasattr(self, "_pos_col") or not hasattr(self, "lbl_v_prof_match"):
+            return
+        try:
+            w = int(self._pos_col.winfo_width())
+        except tk.TclError:
+            return
+        if w > 48:
+            self.lbl_v_prof_match.configure(wraplength=max(200, w - 8))
+
     def _hide_v_prof_suggest_combo(self) -> None:
         if not hasattr(self, "_v_prof_suggest_fr"):
             return
         self._v_prof_suggest_professions.clear()
-        self.cmb_v_prof_suggest.set("")
-        self.cmb_v_prof_suggest.configure(values=())
+        if hasattr(self, "lst_v_prof_suggest"):
+            self.lst_v_prof_suggest.delete(0, tk.END)
+        if hasattr(self, "_v_prof_suggest_sb"):
+            self._v_prof_suggest_sb.grid_remove()
         self._v_prof_suggest_fr.grid_remove()
+        if not window_appears_maximized_or_fullscreen(self):
+            self.after_idle(self._fit_main_window_to_form)
 
     def _v_prof_match_label_text(self, profession: str, v_count: int, *, warn: bool) -> str:
-        """Одна строка без переноса — не сжимает список сотрудников."""
+        """До двух строк с переносом (wraplength на метке)."""
         short = profession.strip()
-        if len(short) > 78:
-            short = short[:75] + "…"
         extra = " — проверьте формулировку" if warn else ""
         return f"{V_PROF_SHEET_NAME}: «{short}», программ «В»: {v_count}{extra}"
 
     def _show_v_prof_suggest_combo(self, chips: list[VProfProfessionCandidate]) -> None:
-        displays: list[str] = []
         self._v_prof_suggest_professions.clear()
+        self.lst_v_prof_suggest.delete(0, tk.END)
         for c in chips:
             mark = "★ " if c.score >= 3 else ""
-            disp = f"{mark}{c.profession} ({c.v_program_count} «В»)"
-            displays.append(disp)
-            self._v_prof_suggest_professions[disp] = c.profession
-        max_len = max((len(d) for d in displays), default=MAIN_FORM_ENTRY_CHARS)
-        cb_width = min(96, max(MAIN_FORM_ENTRY_CHARS, max_len + 2))
-        self.cmb_v_prof_suggest.configure(values=displays, width=cb_width)
-        if displays:
-            self.cmb_v_prof_suggest.current(0)
+            self._v_prof_suggest_professions.append(c.profession)
+            self.lst_v_prof_suggest.insert(tk.END, f"{mark}{c.profession}")
+        n = len(chips)
+        visible = min(max(n, V_PROF_SUGGEST_LIST_MIN_LINES), V_PROF_SUGGEST_LIST_MAX_LINES)
+        self.lst_v_prof_suggest.configure(height=visible)
+        if n > visible:
+            self._v_prof_suggest_sb.grid()
+        else:
+            self._v_prof_suggest_sb.grid_remove()
+        if chips:
+            self.lst_v_prof_suggest.selection_set(0)
         self._v_prof_suggest_fr.grid()
-        self._ensure_main_window_width_for_text(*displays, *self._v_prof_suggest_professions.values())
+        self._sync_profession_block_wraplength()
+        if not window_appears_maximized_or_fullscreen(self):
+            self.after_idle(self._fit_main_window_to_form)
+
+    def _on_v_prof_suggest_activate(self, _event: object | None = None) -> None:
+        self._apply_v_prof_profession_from_combo()
 
     def _apply_v_prof_profession_from_combo(self) -> None:
-        disp = self.cmb_v_prof_suggest.get().strip()
-        if not disp:
+        sel = self.lst_v_prof_suggest.curselection()
+        if not sel:
             return
-        profession = self._v_prof_suggest_professions.get(disp)
-        if profession:
-            self._apply_v_prof_profession_choice(profession)
+        idx = int(sel[0])
+        if 0 <= idx < len(self._v_prof_suggest_professions):
+            self._apply_v_prof_profession_choice(self._v_prof_suggest_professions[idx])
 
     def _apply_v_prof_profession_choice(self, profession: str) -> None:
-        self.entry_position.delete(0, tk.END)
-        self.entry_position.insert(0, profession)
-        self._ensure_main_window_width_for_text(profession)
+        self._set_position_text(profession)
         self._refresh_v_prof_profession_hint(profession)
 
     def _refresh_v_prof_profession_hint(self, profession: str | None = None) -> None:
@@ -2931,7 +3182,7 @@ class ProtocolApp(tk.Tk):
         if not hasattr(self, "lbl_v_prof_match"):
             return
         self._hide_v_prof_suggest_combo()
-        pr = (profession if profession is not None else self.entry_position.get()).strip()
+        pr = (profession if profession is not None else self._get_position_text()).strip()
         path = self._programs_file_resolved()
         if not pr:
             self.lbl_v_prof_match.configure(text="", foreground=Colors.text_hint)
@@ -3042,7 +3293,7 @@ class ProtocolApp(tk.Tk):
             return [
                 EmployeeRecord(
                     fio=fio,
-                    profession=self.entry_position.get().strip(),
+                    profession=self._get_position_text(),
                     subdivision=self.entry_subdivision.get().strip(),
                 )
             ]

@@ -138,7 +138,7 @@ def build_search_toolbar(
     on_highlight: Callable[[], None],
     on_next: Callable[[], None],
 ) -> tuple[ttk.Frame, tk.StringVar, ttk.Label, ttk.Entry]:
-    bar = ttk.Frame(parent, padding=pad())
+    bar = ttk.Frame(parent, padding=(SPACING,))
     bar.pack(fill=tk.X)
     ttk.Label(bar, text="Поиск (от 2 симв.):").pack(side=tk.LEFT, padx=(0, SPACING_SM))
     var_q = tk.StringVar()

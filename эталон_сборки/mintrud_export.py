@@ -492,6 +492,61 @@ def mintrud_v_program_entries_for_employee(
     return []
 
 
+def mintrud_b_program_positions_for_employee(
+    emp: EmployeeRecord,
+    meta: dict[str, Any],
+    *,
+    employees: list[EmployeeRecord] | None,
+    lookup: dict[str, tuple[str, str]],
+) -> list[str]:
+    """
+    Должности для программы «Б» в Минтруде: по одной на каждую строку блока «Б» в протоколе
+    (основная и совмещаемая), как в таблице Word.
+    """
+    from protocol_docx import expand_persons_block_b_rows
+
+    ctx = _meta_v_prof_context(meta)
+    fk = _norm_fio_lookup_key(emp.fio or "")
+    rows_src: list[EmployeeRecord] = []
+    if fk:
+        rows_src = [
+            r
+            for r in ctx["persons_row_source"]
+            if _norm_fio_lookup_key(r.fio or "") == fk
+        ]
+    if not rows_src and employees and fk:
+        rows_src = [r for r in employees if _norm_fio_lookup_key(r.fio or "") == fk]
+    if not rows_src:
+        rows_src = [employee_enriched_for_v_prof_export(emp, employees, lookup)]
+
+    expanded = expand_persons_block_b_rows(rows_src)
+    positions: list[str] = []
+    seen: set[str] = set()
+    for row in expanded:
+        pr = (row.profession or "").strip()
+        if not pr:
+            continue
+        nk = _norm_position_key(pr)
+        if nk in seen:
+            continue
+        seen.add(nk)
+        positions.append(pr)
+
+    explicit_row_src = bool(meta.get("persons_row_source"))
+    if not positions and fk:
+        _, pos_lu = lookup.get(fk, ("", ""))
+        lu = (pos_lu or "").strip()
+        if lu:
+            return [lu]
+        return []
+    if not explicit_row_src and len(positions) == 1 and fk:
+        _, pos_lu = lookup.get(fk, ("", ""))
+        lu = (pos_lu or "").strip()
+        if lu:
+            return [lu]
+    return positions
+
+
 def v_parts_from_stored_v_title(title: str) -> list[str]:
     """
     Строки программы «В» из заголовка журнала («Программа (В)\\n(2. …\\n3. …)»).
@@ -754,25 +809,34 @@ def build_export_rows(
                         pname, gid = _registry_title_and_id_from_v(raw_title, v_rows)
                         if not pname:
                             pname = raw_title
-                        out.append(
-                            _make_row(
-                                rid=rid,
-                                ln=ln,
-                                fn=fn,
-                                pt=pt,
-                                snils=snils,
-                                position=position,
-                                date_s=date_s,
-                                proto_no=proto_no,
-                                tp=tp,
-                                inn_s=inn_s,
-                                name_s=name_s,
-                                inn2_s=inn2_s,
-                                org2_s=org2_s,
-                                program_name=pname,
-                                registry_id=gid,
-                            )
+                        b_positions = mintrud_b_program_positions_for_employee(
+                            emp,
+                            meta,
+                            employees=employees,
+                            lookup=lookup,
                         )
+                        if not b_positions:
+                            b_positions = [position] if position else [""]
+                        for row_position in b_positions:
+                            out.append(
+                                _make_row(
+                                    rid=rid,
+                                    ln=ln,
+                                    fn=fn,
+                                    pt=pt,
+                                    snils=snils,
+                                    position=row_position,
+                                    date_s=date_s,
+                                    proto_no=proto_no,
+                                    tp=tp,
+                                    inn_s=inn_s,
+                                    name_s=name_s,
+                                    inn2_s=inn2_s,
+                                    org2_s=org2_s,
+                                    program_name=pname,
+                                    registry_id=gid,
+                                )
+                            )
                     elif parse_program_key(key) == ProgramKey.PP:
                         raw_title = ""
                         if catalog_path is not None and catalog_path.is_file():
@@ -896,6 +960,7 @@ def export_row_dedupe_key(row: dict[str, Any]) -> tuple[str, ...]:
         (row.get("first_name") or "").strip().casefold(),
         (row.get("patronymic") or "").strip().casefold(),
         (row.get("program_name") or "").strip().casefold(),
+        _norm_position_key(row.get("position") or ""),
     )
 
 
