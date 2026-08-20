@@ -3661,6 +3661,7 @@ class ProtocolApp(tk.Tk):
         last_no_str = ""
         last_emp = persons_raw[-1]
         table_warn = False
+        journal_db_errors: list[str] = []
         raw_selection_b = self._collect_table_persons()
 
         for i, emp in enumerate(persons_raw):
@@ -3736,8 +3737,10 @@ class ProtocolApp(tk.Tk):
                         export_meta_json=meta_json,
                         protocol_kind=j_kind,
                     )
-                except sqlite3.Error:
-                    pass
+                except sqlite3.Error as e:
+                    journal_db_errors.append(
+                        f"{(emp.fio or '').strip() or '?'}: {e}"
+                    )
             except (ProtocolTemplateError, ValueError) as e:
                 messagebox.showerror(
                     "Ошибка",
@@ -3778,6 +3781,17 @@ class ProtocolApp(tk.Tk):
             messagebox.showwarning(
                 "Таблица протокола",
                 self._table_fill_warning_text(),
+                parent=self,
+            )
+        if journal_db_errors:
+            lim = 8
+            body = "\n".join(journal_db_errors[:lim])
+            if len(journal_db_errors) > lim:
+                body += f"\n… и ещё {len(journal_db_errors) - lim}."
+            messagebox.showwarning(
+                "База данных",
+                "Файлы DOCX сохранены, но часть записей не удалось записать в журнал:\n"
+                + body,
                 parent=self,
             )
         messagebox.showinfo(
