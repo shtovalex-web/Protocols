@@ -139,17 +139,23 @@ def stage_windows_app_bundle(
         expected_size=expected_size,
     )
     staging = app_update_staging_dir(root)
-    if staging.exists():
-        shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True, exist_ok=True)
-    shutil.unpack_archive(staged_zip, staging)
-    exe = staging / default_exe_name()
-    internal = staging / INTERNAL_DIR_NAME
-    if not exe.is_file() or not internal.is_dir():
-        shutil.rmtree(staging, ignore_errors=True)
+    staging_tmp = staging.with_name(f"{staging.name}.tmp")
+    if staging_tmp.exists():
+        shutil.rmtree(staging_tmp, ignore_errors=True)
+    staging_tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.unpack_archive(staged_zip, staging_tmp)
+        exe = staging_tmp / default_exe_name()
+        internal = staging_tmp / INTERNAL_DIR_NAME
+        if not exe.is_file() or not internal.is_dir():
+            raise UpdateInstallerError(f"Invalid bundle archive: {source.name}")
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        os.replace(staging_tmp, staging)
+    except Exception:
+        shutil.rmtree(staging_tmp, ignore_errors=True)
         staged_zip.unlink(missing_ok=True)
-        msg = f"Invalid bundle archive: {source.name}"
-        raise UpdateInstallerError(msg)
+        raise
     return staging
 
 
@@ -158,9 +164,49 @@ def cleanup_app_update_staging(install_dir: Path) -> None:
     staging = app_update_staging_dir(root)
     if staging.is_dir():
         shutil.rmtree(staging, ignore_errors=True)
+    staging_tmp = staging.with_name(f"{staging.name}.tmp")
+    if staging_tmp.is_dir():
+        shutil.rmtree(staging_tmp, ignore_errors=True)
     staged_zip = staged_app_zip_path(root)
     if staged_zip.is_file():
         staged_zip.unlink(missing_ok=True)
+
+
+def _replace_path_from_staging(src: Path, dest: Path) -> None:
+    """Скопировать src во временный соседний путь и атомарно заменить dest (файл или каталог)."""
+    parent = dest.parent
+    tmp = parent / f".{dest.name}.update_new"
+    bak = parent / f".{dest.name}.update_bak"
+    for leftover in (tmp, bak):
+        if leftover.is_dir():
+            shutil.rmtree(leftover, ignore_errors=True)
+        elif leftover.is_file():
+            leftover.unlink(missing_ok=True)
+    if src.is_dir():
+        shutil.copytree(src, tmp)
+    else:
+        shutil.copy2(src, tmp)
+    if dest.exists():
+        os.replace(dest, bak)
+    try:
+        os.replace(tmp, dest)
+    except OSError:
+        if bak.exists() and not dest.exists():
+            try:
+                os.replace(bak, dest)
+            except OSError:
+                pass
+        if tmp.exists():
+            if tmp.is_dir():
+                shutil.rmtree(tmp, ignore_errors=True)
+            else:
+                tmp.unlink(missing_ok=True)
+        raise
+    if bak.exists():
+        if bak.is_dir():
+            shutil.rmtree(bak, ignore_errors=True)
+        else:
+            bak.unlink(missing_ok=True)
 
 
 def apply_pending_app_staging(install_dir: Path) -> bool:
@@ -172,12 +218,7 @@ def apply_pending_app_staging(install_dir: Path) -> bool:
         return False
     for item in staging.iterdir():
         dest = root / item.name
-        if item.is_dir():
-            if dest.exists():
-                shutil.rmtree(dest, ignore_errors=True)
-            shutil.copytree(item, dest)
-        else:
-            shutil.copy2(item, dest)
+        _replace_path_from_staging(item, dest)
     cleanup_app_update_staging(root)
     return True
 
