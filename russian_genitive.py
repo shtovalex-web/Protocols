@@ -14,6 +14,7 @@ from typing import Any
 _morph_analyzer: Any = None
 _morph_backend: str | None = None
 _morph_failed: bool = False
+_morph_missing_warned: bool = False
 
 # После этих предлогов остаток фразы не склоняем (типично для должностей:
 # «инженер по охране труда» → «инженера по охране труда»).
@@ -54,6 +55,32 @@ def morph_backend_name() -> str:
     if _morph_failed or _morph_backend is None:
         return "none"
     return _morph_backend
+
+
+def maybe_warn_missing_morphology(parent: Any = None) -> bool:
+    """
+    Один раз за процесс предупредить, если нет pymorphy3/pymorphy2.
+    Возвращает True, если морфология доступна.
+    """
+    global _morph_missing_warned
+    if morph_backend_name() != "none":
+        return True
+    if _morph_missing_warned:
+        return False
+    _morph_missing_warned = True
+    try:
+        from tkinter import messagebox
+
+        messagebox.showwarning(
+            "Родительный падеж",
+            "Не установлены библиотеки склонения (pymorphy3 или pymorphy2).\n"
+            "ФИО и должности комиссии в протоколе останутся в исходном падеже.\n\n"
+            "Установка: py -3 -m pip install pymorphy3 pymorphy3-dicts-ru",
+            parent=parent,
+        )
+    except Exception:
+        pass
+    return False
 
 
 def _get_morph():

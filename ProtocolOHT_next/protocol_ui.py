@@ -155,6 +155,7 @@ from protocol_paths import (
 from protocol_app_info import APP_FULL_NAME, APP_WINDOW_TITLE, populate_application_about_text
 from protocol_embedded_assets import embedded_logo_png_bytes
 from protocol_recovery import export_recovery_templates_to_folder
+from russian_genitive import maybe_warn_missing_morphology
 from ui_theme import (
     UI,
     Colors,
@@ -1443,6 +1444,7 @@ class ProtocolApp(tk.Tk):
         self._apply_ui_color_scheme()
 
     def _open_commission_window(self) -> None:
+        maybe_warn_missing_morphology(self)
         if self._commission_win is not None and self._commission_win.winfo_exists():
             self._commission_win.deiconify()
             self._make_modal(self._commission_win)
@@ -3426,6 +3428,7 @@ class ProtocolApp(tk.Tk):
                 pass
 
     def generate_protocol(self) -> None:
+        maybe_warn_missing_morphology(self)
         theme = self.entry_theme.get().strip()
         date_str = self.entry_date.get().strip()
         protocol_no = self.entry_protocol_no.get().strip()
