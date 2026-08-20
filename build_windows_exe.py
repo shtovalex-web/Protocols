@@ -118,7 +118,7 @@ _PYI_HIDDEN = [
 ]
 
 # fpdf2 тянет fontTools; на Python 3.14 iup — бинарный .pyd, без collect/hidden-import exe падает при старте.
-_PYI_COLLECT_SUBMODULES = ("openpyxl", "pymorphy2", "fontTools")
+_PYI_COLLECT_SUBMODULES = ("openpyxl", "pymorphy3", "pymorphy2", "fontTools")
 _PYI_EXTRA_HIDDEN = (
     "docx",
     "docx.oxml",
@@ -449,6 +449,12 @@ def main() -> int:
         args.append(f"--collect-submodules={pkg}")
     args.append("--collect-all=tkinter")
     args.append(f"--runtime-hook={ROOT / 'tools' / 'pyi_rth_tkinter.py'}")
+    try:
+        import pymorphy3_dicts_ru  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        args.append("--collect-data=pymorphy3_dicts_ru")
     try:
         import pymorphy2_dicts_ru  # noqa: F401
     except ImportError:

@@ -532,8 +532,8 @@ def build_commission_template_payload(
 ) -> dict[str, str]:
     """
     Данные из блока «Приказ и комиссия» (SQLite) для вставки в шаблон протокола.
-    Дата — в том же словесном виде, что дата протокола; ФИО и должности — родительный падеж
-    (при установленном pymorphy2, иначе без изменения).
+    Дата — в том же словесном виде, что дата протокола; ФИО и должности председателя
+    и членов комиссии — родительный падеж (pymorphy3 / pymorphy2; иначе без изменения).
     """
     order_no, order_date, chair, members = load_commission_state_from_db(kind)
     venue, order_approver = load_commission_protocol_context_from_db(kind)

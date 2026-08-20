@@ -2,6 +2,9 @@ openpyxl
 python-docx
 fpdf
 pywin32; sys_platform == "win32"
-# Родительный падеж для ФИО/должностей комиссии в протоколе (рекомендуется):
+# Родительный падеж для ФИО/должностей комиссии в шапке протокола:
+# pymorphy3 — основной (Python 3.11+); pymorphy2 — запасной вариант.
+pymorphy3
+pymorphy3-dicts-ru
 pymorphy2
 pymorphy2-dicts-ru

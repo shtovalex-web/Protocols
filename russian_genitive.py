@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Склонение фраз в родительный падеж (подстановки комиссии). Нужен pymorphy2 + pymorphy2-dicts-ru."""
+"""Склонение фраз в родительный падеж (подстановки комиссии).
+
+Предпочтительно pymorphy3 (+ pymorphy3-dicts-ru) — работает на Python 3.11+.
+Запасной вариант: pymorphy2 (+ pymorphy2-dicts-ru); на новых Python часто
+нужен setuptools (pkg_resources). Без морфологии строки возвращаются как есть.
+"""
 
 from __future__ import annotations
 
@@ -7,24 +12,46 @@ import re
 from typing import Any
 
 _morph_analyzer: Any = None
+_morph_backend: str | None = None
 _morph_failed: bool = False
 
 
+def morph_backend_name() -> str:
+    """Имя активного бэкенда: pymorphy3 | pymorphy2 | none."""
+    _get_morph()
+    if _morph_failed or _morph_backend is None:
+        return "none"
+    return _morph_backend
+
+
 def _get_morph():
-    """Один MorphAnalyzer на процесс; при отсутствии пакета — None."""
-    global _morph_analyzer, _morph_failed
+    """Один MorphAnalyzer на процесс; при отсутствии пакетов — None."""
+    global _morph_analyzer, _morph_backend, _morph_failed
     if _morph_failed:
         return None
     if _morph_analyzer is not None:
         return _morph_analyzer
+
+    # pymorphy3 — основной для Python 3.11+ (в т.ч. 3.12–3.14).
+    try:
+        import pymorphy3
+
+        _morph_analyzer = pymorphy3.MorphAnalyzer()
+        _morph_backend = "pymorphy3"
+        return _morph_analyzer
+    except Exception:
+        pass
+
     try:
         import pymorphy2
 
         _morph_analyzer = pymorphy2.MorphAnalyzer()
-    except ImportError:
+        _morph_backend = "pymorphy2"
+        return _morph_analyzer
+    except Exception:
         _morph_failed = True
+        _morph_backend = None
         return None
-    return _morph_analyzer
 
 
 def _strip_edges_punct(token: str) -> tuple[str, str, str]:
@@ -69,7 +96,7 @@ def _restore_case(original: str, inflected: str) -> str:
 def phrase_to_genitive_russian(phrase: str) -> str:
     """
     По «словам» (фрагменты между пробелами) — родительный падеж.
-    Без pymorphy2 возвращает исходную строку.
+    Без морфологического пакета возвращает исходную строку.
     """
     phrase = (phrase or "").strip()
     if not phrase:
@@ -103,6 +130,7 @@ def phrase_to_genitive_russian(phrase: str) -> str:
 
 
 def format_person_fio_profession_genitive(fio: str, profession: str) -> str:
+    """Строка для шапки протокола: «ФИО, должность» в родительном падеже."""
     f = (fio or "").strip()
     p = (profession or "").strip()
     fg = phrase_to_genitive_russian(f) if f else ""
