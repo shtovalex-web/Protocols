@@ -48,6 +48,27 @@ class TestEmployeesExcelEdit(unittest.TestCase):
         self.assertEqual(rows[0].fio, rec.fio)
         self.assertEqual(rows[0].profession, rec.profession)
 
+    def test_edit_preserves_formulas_on_other_sheet(self) -> None:
+        """Запись сотрудников не должна уничтожать формулы на других листах (data_only=False)."""
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            self.skipTest("openpyxl not installed")
+        wb = load_workbook(self.path)
+        ws_extra = wb.create_sheet("calc")
+        ws_extra["A1"] = 10
+        ws_extra["B1"] = "=A1*2"
+        wb.save(self.path)
+        wb.close()
+        add_employee_to_excel(
+            self.path,
+            EmployeeRecord(fio="Тестов Тест Тестович", profession="Слесарь"),
+            backup=False,
+        )
+        wb2 = load_workbook(self.path, data_only=False)
+        self.assertEqual(wb2["calc"]["B1"].value, "=A1*2")
+        wb2.close()
+
     def test_employee_rows_for_excel_add_splits_profession2(self) -> None:
         rec = EmployeeRecord(
             fio="A",

@@ -1235,7 +1235,8 @@ def _open_employees_workbook_for_edit(path: Path) -> Any:
         write_template_data_base_workbook(path)
     open_path = _workbook_path_for_openpyxl(path)
     try:
-        return load_workbook(open_path, read_only=False, data_only=True)
+        # data_only=False: при сохранении не теряются формулы на других листах книги.
+        return load_workbook(open_path, read_only=False, data_only=False)
     except PermissionError as e:
         raise EmployeeExcelError(
             f"Файл занят другой программой (закройте Excel и повторите):\n{path}"
