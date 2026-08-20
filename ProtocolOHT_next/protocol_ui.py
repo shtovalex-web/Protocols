@@ -349,17 +349,19 @@ class ProtocolApp(tk.Tk):
         self._build_menu()
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_app_quit)
-        self._setup_admin_window()
-        self._refresh_technical_template_labels()
+        # Окно настроек создаём уже после deiconify главного — иначе на Windows
+        # Toplevel, созданный при withdraw родителя, часто оказывается «за» развёрнутым окном.
         self._ensure_bundle_templates_protected()
-        self._try_autoload_employees()
-        self._refresh_employees_file_label()
-        self._refresh_programs_file_label()
         self._bind_keyboard_shortcuts()
         install_clipboard_support(self)
         self._sync_status_bar()
         self.update_idletasks()
         self.deiconify()
+        self._setup_admin_window()
+        self._refresh_technical_template_labels()
+        self._try_autoload_employees()
+        self._refresh_employees_file_label()
+        self._refresh_programs_file_label()
         self.after_idle(
             lambda: apply_startup_geometry(
                 self,
@@ -581,12 +583,20 @@ class ProtocolApp(tk.Tk):
         wdg.minsize(min(req_w, width), min(req_h, height))
         if win is not None and win is not self:
             self.update_idletasks()
-            x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
-            y = self.winfo_rooty() + 32
-            if y + height > sh - 8:
+            # У развёрнутого главного окна rootx/rooty часто отрицательные — не ставим
+            # дочернее «за край» и не прячем под полноэкранный родитель.
+            if window_appears_maximized_or_fullscreen(self):
+                x = max(0, (sw - width) // 2)
                 y = max(0, (sh - height) // 2)
-            if x + width > sw - 8:
-                x = max(0, sw - width - 8)
+            else:
+                x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
+                y = self.winfo_rooty() + 32
+                if y + height > sh - 8:
+                    y = max(0, (sh - height) // 2)
+                if x + width > sw - 8:
+                    x = max(0, sw - width - 8)
+                x = max(0, x)
+                y = max(0, y)
         else:
             x = max(0, (sw - width) // 2)
             y = max(0, (sh - height) // 2)
@@ -635,16 +645,45 @@ class ProtocolApp(tk.Tk):
 
     def _make_modal(self, win: tk.Toplevel, *, parent: tk.Misc | None = None) -> None:
         par = parent if parent is not None else self
+        try:
+            win.deiconify()
+            win.state("normal")
+        except tk.TclError:
+            pass
         win.transient(par)
+        # Снять чужой grab (другое модальное окно), иначе новое не выходит наверх.
+        try:
+            cur = win.grab_current()
+            if cur is not None and cur is not win:
+                cur.grab_release()
+        except tk.TclError:
+            pass
         try:
             win.grab_set()
         except tk.TclError:
             pass
-        win.lift()
+        try:
+            win.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        win.lift(par)
         try:
             win.focus_force()
         except tk.TclError:
             pass
+        # Краткий topmost: вытащить поверх развёрнутого главного, затем обычный z-order.
+        def _clear_topmost() -> None:
+            try:
+                if win.winfo_exists():
+                    win.attributes("-topmost", False)
+                    win.lift(par)
+            except tk.TclError:
+                pass
+
+        try:
+            win.after(80, _clear_topmost)
+        except tk.TclError:
+            _clear_topmost()
 
     def _release_modal(self, win: tk.Misc | None) -> None:
         if win is None:
@@ -1398,6 +1437,12 @@ class ProtocolApp(tk.Tk):
             self.after(80, self._show_preview_toplevel)
 
     def _setup_admin_window(self) -> None:
+        if self._admin_win is not None:
+            try:
+                if self._admin_win.winfo_exists():
+                    return
+            except tk.TclError:
+                self._admin_win = None
         win = self._themed_toplevel()
         win.title("Администрирование — настройки и данные")
         win.withdraw()
@@ -1409,14 +1454,21 @@ class ProtocolApp(tk.Tk):
 
     def _open_admin_window(self) -> None:
         if self._admin_win is None:
+            self._setup_admin_window()
+        if self._admin_win is None:
             return
         self._refresh_mintrud_registry_label(verify_access=True)
         self._refresh_employees_file_label()
         self._refresh_programs_file_label()
         self._refresh_technical_template_labels()
-        self._admin_win.deiconify()
+        try:
+            self._admin_win.deiconify()
+            self._admin_win.state("normal")
+        except tk.TclError:
+            pass
         self._fit_window_geometry(self._admin_win, margin_x=32, margin_y=56, min_w=520, min_h=420)
         self._make_modal(self._admin_win)
+        self._register_clipboard_for_window(self._admin_win)
 
     def _close_admin_window(self) -> None:
         if self._admin_win is not None:
@@ -2647,6 +2699,8 @@ class ProtocolApp(tk.Tk):
         self.lbl_template.configure(text=self._template_status_text())
 
     def _refresh_employees_file_label(self) -> None:
+        if not hasattr(self, "lbl_employees_file"):
+            return
         p = self._employees_file_resolved()
         src = (
             "выбранный файл"
