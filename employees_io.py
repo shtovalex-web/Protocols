@@ -1578,12 +1578,9 @@ def restore_employees_from_archive(
                 "Не найдены выбранные записи в листе архива (ФИО и должность)."
             )
         if targets:
-            preview = "\n".join(
-                f"• {t.fio} — {t.profession or '?'}" for t in targets[:5]
-            )
-            extra = f"\n… и ещё {len(targets) - 5}." if len(targets) > 5 else ""
             raise EmployeeExcelError(
-                "Не все выбранные записи найдены в архиве:\n" f"{preview}{extra}"
+                f"Не все выбранные записи найдены в архиве "
+                f"(не найдено: {len(targets)} из {len(records)})."
             )
         for row_num, _rec in sorted(to_restore, key=lambda item: item[0], reverse=True):
             dst_row = _last_employee_data_row(ws, main_layout) + 1

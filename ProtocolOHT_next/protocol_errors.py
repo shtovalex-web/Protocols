@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import threading
 import traceback
@@ -13,6 +14,23 @@ from tkinter import messagebox
 
 
 _error_journal_lock = threading.Lock()
+
+# СНИЛС в формате XXX-XXX-XXX XX / XXX-XXX-XXX-XX; не трогаем короткие числа.
+_SNILS_RE = re.compile(
+    r"\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b"
+)
+# Типичные подписи с ФИО в сообщениях UI.
+_FIO_LABEL_RE = re.compile(
+    r"(?im)^(\s*(?:сотрудник|фио|работник)\s*[:：]\s*).+$"
+)
+
+
+def sanitize_error_journal_text(text: str) -> str:
+    """Убрать из текста журнала СНИЛС и строки с подписью ФИО (152-ФЗ)."""
+    s = text or ""
+    s = _SNILS_RE.sub("[СНИЛС]", s)
+    s = _FIO_LABEL_RE.sub(r"\1[обезличено]", s)
+    return s
 
 
 def append_error_journal(
@@ -27,12 +45,12 @@ def append_error_journal(
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         parts = [
             "=" * 72,
-            f"[{stamp}] {title}",
-            (message or "").rstrip(),
+            f"[{stamp}] {sanitize_error_journal_text(title)}",
+            sanitize_error_journal_text(message or "").rstrip(),
         ]
         tt = (traceback_text or "").strip()
         if tt:
-            parts.append(tt)
+            parts.append(sanitize_error_journal_text(tt))
         parts.append("")
         block = "\n".join(parts) + "\n"
         with _error_journal_lock:

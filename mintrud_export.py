@@ -464,9 +464,8 @@ def mintrud_v_program_entries_for_employee(
             parts = list(v_parts_for_employee(catalog_path, emp_v) or [])
         except Exception:
             _log.exception(
-                "v_parts_for_employee fallback: %s, сотрудник %s",
+                "v_parts_for_employee fallback failed for catalog %s",
                 catalog_path,
-                emp.fio,
             )
             parts = []
         if parts:
@@ -726,9 +725,8 @@ def build_export_rows(
                                 )
                             except Exception:
                                 _log.exception(
-                                    "mintrud_v_program_entries_for_employee: %s, сотрудник %s",
+                                    "mintrud_v_program_entries_for_employee failed for catalog %s",
                                     catalog_path,
-                                    fio_one,
                                 )
                                 entries = []
                         if not entries:
