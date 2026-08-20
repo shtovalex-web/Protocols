@@ -7,6 +7,9 @@ set "DEPLOY_ROOT=D:\Проекты Курсор\Протоколы по ОТ\П�
 
 echo Сборка ProtocolOOT.exe (onefile).
 echo Перед PyInstaller: ruff check . (нужен ruff: pip install -r requirements-build.txt).
+echo Нужны зависимости приложения, в т.ч. pymorphy3:
+echo   py -3.12 -m pip install -r requirements.txt
+echo   py -3.12 -m pip install -r requirements-build.txt
 echo После сборки: update_info.json в data\ и публикация в D:\Обновление\windows\^<версия^>\.
 echo.
 

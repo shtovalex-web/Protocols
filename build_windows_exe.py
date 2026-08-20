@@ -410,6 +410,20 @@ def main() -> int:
             file=sys.stderr,
         )
 
+    try:
+        import pymorphy3  # noqa: F401
+        import pymorphy3_dicts_ru  # noqa: F401
+    except ImportError as e:
+        print(
+            "Ошибка: для родительного падежа комиссии в .exe нужны pymorphy3 и словари.\n"
+            f"  {e}\n"
+            "Установите в тот же Python, которым собираете (обычно 3.12):\n"
+            "  py -3.12 -m pip install pymorphy3 pymorphy3-dicts-ru\n"
+            "  или: py -3.12 -m pip install -r requirements.txt",
+            file=sys.stderr,
+        )
+        return 1
+
     if len(sys.argv) > 1:
         out_arg = " ".join(sys.argv[1:]).strip().strip('"')
         OUT_DIR = Path(out_arg).expanduser().resolve()
@@ -449,12 +463,8 @@ def main() -> int:
         args.append(f"--collect-submodules={pkg}")
     args.append("--collect-all=tkinter")
     args.append(f"--runtime-hook={ROOT / 'tools' / 'pyi_rth_tkinter.py'}")
-    try:
-        import pymorphy3_dicts_ru  # noqa: F401
-    except ImportError:
-        pass
-    else:
-        args.append("--collect-data=pymorphy3_dicts_ru")
+    # Проверено выше: pymorphy3 + словари обязательны для сборки.
+    args.append("--collect-data=pymorphy3_dicts_ru")
     try:
         import pymorphy2_dicts_ru  # noqa: F401
     except ImportError:
