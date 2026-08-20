@@ -262,9 +262,17 @@ def _detect_employee_columns(header_row: tuple[Any, ...]) -> dict[str, int]:
 
 
 def _excel_cell_str(row: tuple[Any, ...], index: int) -> str:
+    """Строка ячейки; целые float (типичный СНИЛС из Excel) без хвоста ``.0``."""
     if index >= len(row) or row[index] is None:
         return ""
-    return str(row[index]).strip()
+    v = row[index]
+    if isinstance(v, bool):
+        return str(v).strip()
+    if isinstance(v, float) and v == int(v):
+        return str(int(v))
+    if isinstance(v, int):
+        return str(v)
+    return str(v).replace("\xa0", " ").strip()
 
 
 _FIO_HEADER_PLACEHOLDERS = frozenset(

@@ -23,6 +23,7 @@ from employees_io import (
     write_template_data_base_workbook,
     _analyze_employee_worksheet,
     _collect_employee_rows_from_sheet,
+    _excel_cell_str,
     _last_employee_data_row,
 )
 
@@ -280,6 +281,13 @@ class TestEmployeesExcelEdit(unittest.TestCase):
         archived = load_archived_employees_from_excel(self.path)
         r = restore_employees_from_archive(self.path, archived, backup=False)
         self.assertEqual(r, 1)
+
+
+class TestExcelCellStrSnils(unittest.TestCase):
+    def test_int_like_float_without_dot_zero(self) -> None:
+        self.assertEqual(_excel_cell_str((12345678901.0,), 0), "12345678901")
+        self.assertEqual(_excel_cell_str((12345678901,), 0), "12345678901")
+        self.assertNotIn(".0", _excel_cell_str((12345678901.0,), 0))
 
 
 if __name__ == "__main__":
