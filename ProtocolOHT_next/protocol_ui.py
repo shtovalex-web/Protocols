@@ -2903,7 +2903,18 @@ class ProtocolApp(tk.Tk):
         except EmployeeExcelError as e:
             messagebox.showerror("Сотрудники Excel", str(e), parent=self)
             return
-        self._after_employees_excel_changed(action_note=f"В архив перенесено записей: {n}.")
+        note = f"В архив перенесено записей: {n}."
+        if n < len(chosen):
+            missing = len(chosen) - n
+            messagebox.showwarning(
+                "Архив",
+                f"Перенесено {n} из {len(chosen)}. "
+                f"Не найдено в файле Excel: {missing} "
+                "(возможно, список устарел — нажмите «Обновить базы с диска»).",
+                parent=self,
+            )
+            note += f" Не найдено в файле: {missing}."
+        self._after_employees_excel_changed(action_note=note)
 
     def _open_employee_archive_dialog(self) -> None:
         path = self._employees_file_resolved()

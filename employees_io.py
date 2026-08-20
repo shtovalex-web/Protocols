@@ -1484,6 +1484,7 @@ def archive_employees_in_excel(
                 "Не найдены выбранные сотрудники в файле Excel (возможно, список устарел — "
                 "нажмите «Обновить базы с диска»)."
             )
+        # Частичный перенос допустим: вызывающий код сравнивает returned с len(records).
         _save_employees_workbook(wb, path)
     finally:
         wb.close()
