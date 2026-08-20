@@ -87,6 +87,7 @@ def employees_workbook_writable_path(path: Path) -> Path:
     Куда сохранять правки сотрудников.
 
     Никогда не пишем в ``.office_cache`` (временный кэш LibreOffice из ODS).
+    Не пишем в каталог встроенных ресурсов (bundle/data) — только в каталог данных пользователя.
     Для ``.ods``/``.xls`` — соседний ``.xlsx``; если путь уже из кэша — ``Data_base.xlsx``
     в каталоге данных пользователя.
     """
@@ -95,6 +96,19 @@ def employees_workbook_writable_path(path: Path) -> Path:
         from app_paths import application_user_dir
 
         return application_user_dir() / EMPLOYEES_EXCEL_FILENAME
+    try:
+        from app_paths import application_bundle_dir, application_user_dir
+
+        bundle_root = application_bundle_dir().resolve()
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(bundle_root)
+        except ValueError:
+            pass
+        else:
+            return application_user_dir() / EMPLOYEES_EXCEL_FILENAME
+    except (OSError, RuntimeError, ImportError):
+        pass
     suf = path.suffix.lower()
     if suf in (".xlsx", ".xlsm"):
         return path

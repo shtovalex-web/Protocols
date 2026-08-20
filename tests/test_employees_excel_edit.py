@@ -92,6 +92,22 @@ class TestEmployeesExcelEdit(unittest.TestCase):
         out = employees_workbook_writable_path(ods)
         self.assertEqual(out, ods.with_suffix(".xlsx"))
 
+    def test_writable_path_never_bundle_dir(self) -> None:
+        from employees_io import employees_workbook_writable_path
+
+        bundle = Path(self._tmp.name) / "bundle"
+        user = Path(self._tmp.name) / "user_data"
+        bundle.mkdir(parents=True, exist_ok=True)
+        user.mkdir(parents=True, exist_ok=True)
+        bundled = bundle / "Data_base.xlsx"
+        bundled.write_bytes(b"x")
+        with (
+            mock.patch("app_paths.application_bundle_dir", return_value=bundle),
+            mock.patch("app_paths.application_user_dir", return_value=user),
+        ):
+            out = employees_workbook_writable_path(bundled)
+        self.assertEqual(out, user / "Data_base.xlsx")
+
     def test_employee_rows_for_excel_add_splits_profession2(self) -> None:
         rec = EmployeeRecord(
             fio="A",
