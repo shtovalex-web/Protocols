@@ -123,12 +123,22 @@ def write_protocol_pdf(path: str, content: str) -> None:
     _fpdf_output_file(pdf, path)
 
 
-def _docx_to_pdf_via_word_com(docx_path: Path, pdf_path: Path) -> None:
+def _docx_to_pdf_via_word_com(
+    docx_path: Path,
+    pdf_path: Path,
+    *,
+    timeout_sec: float = 120.0,
+) -> None:
     """
     Конвертация DOCX → PDF через Microsoft Word (COM).
     Не использует docx2pdf: там tqdm пишет в stderr, а в tkinter / pythonw / PyInstaller --windowed
     часто sys.stderr is None → 'NoneType' object has no attribute 'write'.
+
+    COM выполняется в отдельном потоке; при превышении ``timeout_sec`` —
+    RuntimeError (зависший WINWORD.EXE пользователь может завершить вручную).
     """
+    import threading
+
     try:
         import win32com.client  # type: ignore[import-untyped]
     except ImportError as e:
@@ -141,26 +151,44 @@ def _docx_to_pdf_via_word_com(docx_path: Path, pdf_path: Path) -> None:
     pdf_path = pdf_path.resolve()
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     wd_format_pdf = 17
-    word = win32com.client.Dispatch("Word.Application")
-    word.Visible = False
-    try:
-        word.DisplayAlerts = 0
-    except Exception:
-        pass
-    doc = None
-    try:
-        doc = word.Documents.Open(str(docx_path), ReadOnly=True)
-        doc.SaveAs(str(pdf_path), FileFormat=wd_format_pdf)
-    finally:
-        if doc is not None:
+    errors: list[BaseException] = []
+
+    def _run() -> None:
+        word = None
+        doc = None
+        try:
+            word = win32com.client.Dispatch("Word.Application")
+            word.Visible = False
             try:
-                doc.Close(0)
+                word.DisplayAlerts = 0
             except Exception:
                 pass
-        try:
-            word.Quit()
-        except Exception:
-            pass
+            doc = word.Documents.Open(str(docx_path), ReadOnly=True)
+            doc.SaveAs(str(pdf_path), FileFormat=wd_format_pdf)
+        except BaseException as e:
+            errors.append(e)
+        finally:
+            if doc is not None:
+                try:
+                    doc.Close(0)
+                except Exception:
+                    pass
+            if word is not None:
+                try:
+                    word.Quit()
+                except Exception:
+                    pass
+
+    worker = threading.Thread(target=_run, name="word-com-pdf", daemon=True)
+    worker.start()
+    worker.join(float(timeout_sec))
+    if worker.is_alive():
+        raise RuntimeError(
+            f"Microsoft Word не завершил конвертацию PDF за {int(timeout_sec)} с.\n"
+            "Закройте зависший WINWORD.EXE в диспетчере задач и повторите сохранение."
+        )
+    if errors:
+        raise errors[0]
 
 
 def write_protocol_pdf_from_docx_template(
