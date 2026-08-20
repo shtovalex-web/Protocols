@@ -6,6 +6,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from _bootstrap import setup_main_project_paths
 
@@ -68,6 +69,27 @@ class TestEmployeesExcelEdit(unittest.TestCase):
         wb2 = load_workbook(self.path, data_only=False)
         self.assertEqual(wb2["calc"]["B1"].value, "=A1*2")
         wb2.close()
+
+    def test_writable_path_never_office_cache(self) -> None:
+        from employees_io import employees_workbook_writable_path
+
+        cache = Path(self._tmp.name) / ".office_cache"
+        cache.mkdir(parents=True, exist_ok=True)
+        cached = cache / "Data_base.ods.123.xlsx"
+        cached.write_bytes(b"x")
+        with mock.patch(
+            "bundle_integration.office_cache_dir", return_value=cache
+        ):
+            out = employees_workbook_writable_path(cached)
+        self.assertNotIn(".office_cache", str(out).replace("\\", "/"))
+        self.assertTrue(str(out).endswith("Data_base.xlsx"))
+
+    def test_writable_path_ods_to_sibling_xlsx(self) -> None:
+        from employees_io import employees_workbook_writable_path
+
+        ods = Path(self._tmp.name) / "Data_base.ods"
+        out = employees_workbook_writable_path(ods)
+        self.assertEqual(out, ods.with_suffix(".xlsx"))
 
     def test_employee_rows_for_excel_add_splits_profession2(self) -> None:
         rec = EmployeeRecord(

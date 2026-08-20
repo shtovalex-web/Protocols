@@ -70,6 +70,41 @@ class TechVProgramInfo:
 EMPLOYEES_EXCEL_FILENAME = "Data_base.xlsx"
 # Справочник программ (B, V_PROF, PP, SIZ, V). Если файла нет — программы читаются из Data_base.xlsx.
 PROGRAMS_EXCEL_FILENAME = "Programs_base.xlsx"
+
+
+def _is_path_under_office_cache(path: Path) -> bool:
+    try:
+        from bundle_integration import office_cache_dir
+
+        path.resolve().relative_to(office_cache_dir().resolve())
+        return True
+    except (ValueError, OSError, ImportError):
+        return False
+
+
+def employees_workbook_writable_path(path: Path) -> Path:
+    """
+    Куда сохранять правки сотрудников.
+
+    Никогда не пишем в ``.office_cache`` (временный кэш LibreOffice из ODS).
+    Для ``.ods``/``.xls`` — соседний ``.xlsx``; если путь уже из кэша — ``Data_base.xlsx``
+    в каталоге данных пользователя.
+    """
+    path = Path(path)
+    if _is_path_under_office_cache(path):
+        from app_paths import application_user_dir
+
+        return application_user_dir() / EMPLOYEES_EXCEL_FILENAME
+    suf = path.suffix.lower()
+    if suf in (".xlsx", ".xlsm"):
+        return path
+    if suf in (".ods", ".xls"):
+        return path.with_suffix(".xlsx")
+    if suf:
+        return path.with_suffix(".xlsx")
+    return path.with_name(f"{path.name}.xlsx")
+
+
 PROGRAM_WORKBOOK_CANONICAL_SHEETS: tuple[str, ...] = (
     "B",
     "V_PROF",
@@ -1273,15 +1308,16 @@ def _pick_archive_worksheet(wb: Any, main_ws: Any, layout: _EmployeeSheetColumns
 
 def _save_employees_workbook(wb: Any, path: Path) -> None:
     path = Path(path)
-    save_path = _workbook_path_for_openpyxl(path)
+    save_path = employees_workbook_writable_path(path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         wb.save(save_path)
     except PermissionError as e:
         raise EmployeeExcelError(
-            f"Не удалось сохранить файл (закройте Excel и повторите):\n{path}"
+            f"Не удалось сохранить файл (закройте Excel и повторите):\n{save_path}"
         ) from e
     except OSError as e:
-        raise EmployeeExcelError(f"Не удалось сохранить файл:\n{path}\n\n{e}") from e
+        raise EmployeeExcelError(f"Не удалось сохранить файл:\n{save_path}\n\n{e}") from e
 
 
 def load_archived_employee_entries_from_excel(
