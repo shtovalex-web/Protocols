@@ -42,6 +42,7 @@ from commission_admin import (
 )
 from employees_io import (
     EMPLOYEES_EXCEL_FILENAME,
+    ArchivedEmployeeEntry,
     EmployeeExcelError,
     EmployeeRecord,
     PROGRAMS_EXCEL_FILENAME,
@@ -52,8 +53,8 @@ from employees_io import (
     format_fio_filename_surname_initials,
     listbox_label_for_employee,
     listbox_subdivision_header,
-    load_archived_employees_from_excel,
-    restore_employees_from_archive,
+    load_archived_employee_entries_from_excel,
+    restore_archived_employee_entries,
     subdivision_group_key,
     load_all_tech_v_programs_from_excel,
     load_employees_from_excel,
@@ -2923,15 +2924,21 @@ class ProtocolApp(tk.Tk):
     def _open_employee_archive_dialog(self) -> None:
         path = self._employees_file_resolved()
         try:
-            archived = load_archived_employees_from_excel(path)
+            archived_entries = load_archived_employee_entries_from_excel(path)
         except EmployeeExcelError as e:
             messagebox.showerror("Архив сотрудников", str(e), parent=self)
             return
-        sort_employees_by_subdivision_then_fio(archived)
+        archived_entries.sort(
+            key=lambda e: (
+                (e.record.subdivision or "").strip().lower(),
+                (e.record.fio or "").strip().lower(),
+                e.row_num,
+            )
+        )
 
-        def on_restore(records: list[EmployeeRecord]) -> bool:
+        def on_restore(entries: list[ArchivedEmployeeEntry]) -> bool:
             try:
-                n = restore_employees_from_archive(path, records)
+                n = restore_archived_employee_entries(path, entries)
             except EmployeeExcelError as e:
                 messagebox.showerror("Архив сотрудников", str(e), parent=self)
                 return False
@@ -2940,7 +2947,7 @@ class ProtocolApp(tk.Tk):
 
         EmployeeArchiveDialog(
             self,
-            archived,
+            archived_entries,
             on_restore=on_restore,
             themed_toplevel=self._themed_toplevel,
             make_modal=self._make_modal,

@@ -17,8 +17,10 @@ from employees_io import (
     add_employee_to_excel,
     archive_employees_in_excel,
     employee_rows_for_excel_add,
+    load_archived_employee_entries_from_excel,
     load_archived_employees_from_excel,
     load_employees_from_excel,
+    restore_archived_employee_entries,
     restore_employees_from_archive,
     write_template_data_base_workbook,
     _analyze_employee_worksheet,
@@ -339,6 +341,31 @@ class TestArchiveMatchNorm(unittest.TestCase):
         b = EmployeeRecord(fio="Алена Иванова", profession="Слесарь", subdivision="Цех 1")
         self.assertTrue(_employee_archive_records_match(a, b))
         self.assertEqual(employee_unique_key(a), employee_unique_key(b))
+
+
+class TestRestoreByRowNum(unittest.TestCase):
+    def test_restore_archived_entries_by_row_num(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Data_base.xlsx"
+            write_template_data_base_workbook(path)
+            a = EmployeeRecord(fio="Первый П П", profession="Слесарь", subdivision="А")
+            b = EmployeeRecord(fio="Второй В В", profession="Токарь", subdivision="Б")
+            add_employee_to_excel(path, a, backup=False)
+            add_employee_to_excel(path, b, backup=False)
+            archive_employees_in_excel(path, [a, b], backup=False)
+            entries = load_archived_employee_entries_from_excel(path)
+            self.assertEqual(len(entries), 2)
+            # Восстановить только одну строку по row_num
+            one = [entries[0]]
+            kept_fio = entries[1].record.fio
+            n = restore_archived_employee_entries(path, one, backup=False)
+            self.assertEqual(n, 1)
+            left = load_archived_employee_entries_from_excel(path)
+            self.assertEqual(len(left), 1)
+            self.assertEqual(left[0].record.fio, kept_fio)
+            active = load_employees_from_excel(path)
+            self.assertEqual(len(active), 1)
+            self.assertEqual(active[0].fio, one[0].record.fio)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,11 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Callable
 
-from employees_io import EmployeeRecord, listbox_label_for_employee
+from employees_io import (
+    ArchivedEmployeeEntry,
+    EmployeeRecord,
+    listbox_label_for_employee,
+)
 from ui_theme import FIELD_STYLE, configure_listbox, pad
 
 
@@ -86,14 +90,14 @@ class EmployeeFormDialog:
 
 
 class EmployeeArchiveDialog:
-    """Список сотрудников на листе rabotnik_archive с восстановлением."""
+    """Список сотрудников на листе rabotnik_archive с восстановлением по номеру строки Excel."""
 
     def __init__(
         self,
         parent: tk.Misc,
-        records: list[EmployeeRecord],
+        entries: list[ArchivedEmployeeEntry],
         *,
-        on_restore: Callable[[list[EmployeeRecord]], bool | None],
+        on_restore: Callable[[list[ArchivedEmployeeEntry]], bool | None],
         themed_toplevel: Callable[[tk.Misc | None], tk.Toplevel],
         make_modal: Callable[[tk.Toplevel], None],
     ) -> None:
@@ -110,7 +114,8 @@ class EmployeeArchiveDialog:
             outer,
             text=(
                 "Сотрудники, перенесённые в архив (лист rabotnik_archive в Data_base.xlsx). "
-                "Выберите одного или нескольких и нажмите «Восстановить»."
+                "Выберите одного или нескольких и нажмите «Восстановить» "
+                "(возврат по строке Excel, без повторного поиска по ФИО)."
             ),
             wraplength=600,
             style="Muted.TLabel",
@@ -130,10 +135,10 @@ class EmployeeArchiveDialog:
         lb.grid(row=0, column=0, sticky=tk.NSEW)
         sb.grid(row=0, column=1, sticky=tk.NS)
         sb.configure(command=lb.yview)
-        self._records = list(records)
-        for rec in self._records:
-            lb.insert(tk.END, listbox_label_for_employee(rec))
-        if not self._records:
+        self._entries = list(entries)
+        for entry in self._entries:
+            lb.insert(tk.END, listbox_label_for_employee(entry.record))
+        if not self._entries:
             lb.insert(tk.END, "(архив пуст)")
             lb.configure(state=tk.DISABLED)
         btns = ttk.Frame(outer)
@@ -142,7 +147,7 @@ class EmployeeArchiveDialog:
             btns,
             text="Восстановить",
             command=lambda: self._restore(win, lb),
-            state=tk.NORMAL if self._records else tk.DISABLED,
+            state=tk.NORMAL if self._entries else tk.DISABLED,
         ).grid(row=0, column=0, padx=(0, 8))
         ttk.Button(btns, text="Закрыть", command=win.destroy).grid(row=0, column=1)
         make_modal(win)
@@ -152,7 +157,7 @@ class EmployeeArchiveDialog:
         if not sel:
             messagebox.showinfo("Архив", "Выберите сотрудников в списке.", parent=win)
             return
-        chosen = [self._records[int(i)] for i in sel]
+        chosen = [self._entries[int(i)] for i in sel]
         ok = self._on_restore(chosen)
         if ok is False:
             return
