@@ -306,5 +306,26 @@ class TestExcelCellStrSnils(unittest.TestCase):
         self.assertNotIn(".0", _excel_cell_str((12345678901.0,), 0))
 
 
+class TestBackupRotation(unittest.TestCase):
+    def test_before_edit_keeps_rotated_copies(self) -> None:
+        from employees_io import _backup_workbook_before_edit
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Data_base.xlsx"
+            path.write_text("v0", encoding="utf-8")
+            for i in range(3):
+                path.write_text(f"v{i + 1}", encoding="utf-8")
+                _backup_workbook_before_edit(path, keep=3)
+            primary = path.with_name("Data_base_before_edit.xlsx")
+            b1 = path.with_name("Data_base_before_edit.1.xlsx")
+            b2 = path.with_name("Data_base_before_edit.2.xlsx")
+            self.assertTrue(primary.is_file())
+            self.assertTrue(b1.is_file())
+            self.assertTrue(b2.is_file())
+            self.assertEqual(primary.read_text(encoding="utf-8"), "v3")
+            self.assertEqual(b1.read_text(encoding="utf-8"), "v2")
+            self.assertEqual(b2.read_text(encoding="utf-8"), "v1")
+
+
 if __name__ == "__main__":
     unittest.main()

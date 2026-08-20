@@ -1271,13 +1271,37 @@ def _copy_excel_row(ws_src: Any, src_row: int, ws_dst: Any, dst_row: int, max_co
         ws_dst.cell(row=dst_row, column=c, value=ws_src.cell(row=src_row, column=c).value)
 
 
-def _backup_workbook_before_edit(path: Path) -> Path | None:
+def _backup_workbook_before_edit(path: Path, *, keep: int = 5) -> Path | None:
+    """Копия перед правкой; хранит до ``keep`` файлов ``*_before_edit`` / ``*_before_edit.N``."""
     path = Path(path)
     if not path.is_file():
         return None
-    backup = path.with_name(f"{path.stem}_before_edit{path.suffix}")
-    shutil.copy2(path, backup)
-    return backup
+    keep = max(1, int(keep))
+    primary = path.with_name(f"{path.stem}_before_edit{path.suffix}")
+    slots = [primary] + [
+        path.with_name(f"{path.stem}_before_edit.{i}{path.suffix}")
+        for i in range(1, keep)
+    ]
+    # Сдвиг в сторону «старее»: slots[i-1] → slots[i]
+    for i in range(len(slots) - 1, 0, -1):
+        prev, cur = slots[i - 1], slots[i]
+        if not prev.is_file():
+            continue
+        try:
+            if cur.is_file():
+                cur.unlink()
+        except OSError:
+            pass
+        try:
+            prev.replace(cur)
+        except OSError:
+            try:
+                shutil.copy2(prev, cur)
+                prev.unlink(missing_ok=True)
+            except OSError:
+                pass
+    shutil.copy2(path, primary)
+    return primary
 
 
 def _open_employees_workbook_for_edit(path: Path) -> Any:
