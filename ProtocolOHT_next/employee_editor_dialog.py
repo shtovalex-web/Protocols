@@ -93,7 +93,7 @@ class EmployeeArchiveDialog:
         parent: tk.Misc,
         records: list[EmployeeRecord],
         *,
-        on_restore: Callable[[list[EmployeeRecord]], None],
+        on_restore: Callable[[list[EmployeeRecord]], bool | None],
         themed_toplevel: Callable[[tk.Misc | None], tk.Toplevel],
         make_modal: Callable[[tk.Toplevel], None],
     ) -> None:
@@ -153,5 +153,7 @@ class EmployeeArchiveDialog:
             messagebox.showinfo("Архив", "Выберите сотрудников в списке.", parent=win)
             return
         chosen = [self._records[int(i)] for i in sel]
-        self._on_restore(chosen)
+        ok = self._on_restore(chosen)
+        if ok is False:
+            return
         win.destroy()

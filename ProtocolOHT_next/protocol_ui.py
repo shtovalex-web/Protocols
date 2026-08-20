@@ -2925,13 +2925,14 @@ class ProtocolApp(tk.Tk):
             return
         sort_employees_by_subdivision_then_fio(archived)
 
-        def on_restore(records: list[EmployeeRecord]) -> None:
+        def on_restore(records: list[EmployeeRecord]) -> bool:
             try:
                 n = restore_employees_from_archive(path, records)
             except EmployeeExcelError as e:
                 messagebox.showerror("Архив сотрудников", str(e), parent=self)
-                return
+                return False
             self._after_employees_excel_changed(action_note=f"Из архива восстановлено: {n}.")
+            return True
 
         EmployeeArchiveDialog(
             self,
