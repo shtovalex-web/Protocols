@@ -15,6 +15,7 @@ _morph_analyzer: Any = None
 _morph_backend: str | None = None
 _morph_failed: bool = False
 _morph_missing_warned: bool = False
+_morph_init_error: str = ""
 
 # После этих предлогов остаток фразы не склоняем (типично для должностей:
 # «инженер по охране труда» → «инженера по охране труда»).
@@ -69,13 +70,29 @@ def maybe_warn_missing_morphology(parent: Any = None) -> bool:
         return False
     _morph_missing_warned = True
     try:
+        import sys
         from tkinter import messagebox
+
+        if getattr(sys, "frozen", False):
+            hint = (
+                "В этой сборке нет модуля склонения.\n"
+                "Обратитесь к администратору за обновлённой версией программы."
+            )
+        else:
+            # Подсказка для того же интерпретатора, которым запущена программа.
+            py = sys.executable or "py -3"
+            hint = (
+                f"Установка для текущего Python:\n"
+                f'"{py}" -m pip install pymorphy3 pymorphy3-dicts-ru'
+            )
+            if _morph_init_error:
+                hint += f"\n\nТехническая причина: {_morph_init_error}"
 
         messagebox.showwarning(
             "Родительный падеж",
-            "Не установлены библиотеки склонения (pymorphy3 или pymorphy2).\n"
+            "Не удалось подключить библиотеки склонения (pymorphy3 / pymorphy2).\n"
             "ФИО и должности комиссии в протоколе останутся в исходном падеже.\n\n"
-            "Установка: py -3 -m pip install pymorphy3 pymorphy3-dicts-ru",
+            + hint,
             parent=parent,
         )
     except Exception:
@@ -85,11 +102,13 @@ def maybe_warn_missing_morphology(parent: Any = None) -> bool:
 
 def _get_morph():
     """Один MorphAnalyzer на процесс; при отсутствии пакетов — None."""
-    global _morph_analyzer, _morph_backend, _morph_failed
+    global _morph_analyzer, _morph_backend, _morph_failed, _morph_init_error
     if _morph_failed:
         return None
     if _morph_analyzer is not None:
         return _morph_analyzer
+
+    errors: list[str] = []
 
     # pymorphy3 — основной для Python 3.11+ (в т.ч. 3.12–3.14).
     try:
@@ -97,19 +116,23 @@ def _get_morph():
 
         _morph_analyzer = pymorphy3.MorphAnalyzer()
         _morph_backend = "pymorphy3"
+        _morph_init_error = ""
         return _morph_analyzer
-    except Exception:
-        pass
+    except Exception as e:
+        errors.append(f"pymorphy3: {type(e).__name__}: {e}")
 
     try:
         import pymorphy2
 
         _morph_analyzer = pymorphy2.MorphAnalyzer()
         _morph_backend = "pymorphy2"
+        _morph_init_error = ""
         return _morph_analyzer
-    except Exception:
+    except Exception as e:
+        errors.append(f"pymorphy2: {type(e).__name__}: {e}")
         _morph_failed = True
         _morph_backend = None
+        _morph_init_error = "; ".join(errors)
         return None
 
 
