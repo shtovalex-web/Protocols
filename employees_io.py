@@ -837,10 +837,10 @@ def listbox_subdivision_header(
 def employee_unique_key(rec: EmployeeRecord) -> str:
     return "|".join(
         (
-            (rec.fio or "").strip().lower(),
-            (rec.profession or "").strip().lower(),
-            (rec.subdivision or "").strip().lower(),
-            (rec.profession2 or "").strip().lower(),
+            _norm_employee_match_part(rec.fio),
+            _norm_employee_match_part(rec.profession),
+            _norm_employee_match_part(rec.subdivision),
+            _norm_employee_match_part(rec.profession2),
         )
     )
 
@@ -1499,7 +1499,7 @@ def archive_employees_in_excel(
             if not targets:
                 break
             match_idx = next(
-                (i for i, t in enumerate(targets) if _employee_records_match(t, rec)),
+                (i for i, t in enumerate(targets) if _employee_archive_records_match(t, rec)),
                 None,
             )
             if match_idx is None:

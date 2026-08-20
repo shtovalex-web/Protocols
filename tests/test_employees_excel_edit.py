@@ -327,5 +327,19 @@ class TestBackupRotation(unittest.TestCase):
             self.assertEqual(b2.read_text(encoding="utf-8"), "v1")
 
 
+class TestArchiveMatchNorm(unittest.TestCase):
+    def test_yo_and_spaces_match_for_archive(self) -> None:
+        from employees_io import (
+            EmployeeRecord,
+            _employee_archive_records_match,
+            employee_unique_key,
+        )
+
+        a = EmployeeRecord(fio="Алёна  Иванова", profession="Слесарь", subdivision="Цех 1")
+        b = EmployeeRecord(fio="Алена Иванова", profession="Слесарь", subdivision="Цех 1")
+        self.assertTrue(_employee_archive_records_match(a, b))
+        self.assertEqual(employee_unique_key(a), employee_unique_key(b))
+
+
 if __name__ == "__main__":
     unittest.main()
