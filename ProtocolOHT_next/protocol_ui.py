@@ -622,8 +622,12 @@ class ProtocolApp(tk.Tk):
             self.geometry(f"{cur_w}x{target_h}+{cur_x}+{cur_y}")
 
     def _themed_toplevel(self, parent: tk.Misc | None = None) -> tk.Toplevel:
-        """Дочернее окно с той же темой, что и главное (clam, поля, скругление)."""
+        """Дочернее окно с темой главного. Создаётся скрытым — показ через ``_make_modal``."""
         win = tk.Toplevel(parent if parent is not None else self)
+        try:
+            win.withdraw()
+        except tk.TclError:
+            pass
         apply_theme_to_window(win)
         self._apply_embedded_window_icon(win)
         return win
@@ -643,47 +647,90 @@ class ProtocolApp(tk.Tk):
             return self._commission_win  # type: ignore[return-value]
         return self
 
+    def _reset_window_alpha(self, win: tk.Misc) -> None:
+        try:
+            win.attributes("-alpha", 1.0)
+        except tk.TclError:
+            pass
+
+    def _fade_in_window(
+        self,
+        win: tk.Toplevel,
+        *,
+        steps: int = 8,
+        step_ms: int = 12,
+    ) -> None:
+        """Плавное появление (если ОС поддерживает -alpha); иначе мгновенно."""
+        steps = max(1, int(steps))
+        try:
+            win.attributes("-alpha", 0.0)
+        except tk.TclError:
+            return
+
+        def _step(i: int = 1) -> None:
+            try:
+                if not win.winfo_exists():
+                    return
+                alpha = min(1.0, float(i) / float(steps))
+                win.attributes("-alpha", alpha)
+                if alpha < 1.0:
+                    win.after(step_ms, lambda: _step(i + 1))
+            except tk.TclError:
+                self._reset_window_alpha(win)
+
+        try:
+            win.after(step_ms, _step)
+        except tk.TclError:
+            self._reset_window_alpha(win)
+
     def _make_modal(self, win: tk.Toplevel, *, parent: tk.Misc | None = None) -> None:
+        """Показать окно поверх родителя: геометрия уже задана, без мигания размера."""
         par = parent if parent is not None else self
         try:
-            win.deiconify()
-            win.state("normal")
+            win.update_idletasks()
         except tk.TclError:
             pass
         win.transient(par)
-        # Снять чужой grab (другое модальное окно), иначе новое не выходит наверх.
         try:
             cur = win.grab_current()
             if cur is not None and cur is not win:
                 cur.grab_release()
         except tk.TclError:
             pass
+        # Сначала в z-order, потом показ — меньше «прыжка» за главное окно.
+        try:
+            win.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        try:
+            win.deiconify()
+            win.state("normal")
+        except tk.TclError:
+            pass
+        win.lift(par)
         try:
             win.grab_set()
         except tk.TclError:
             pass
         try:
-            win.attributes("-topmost", True)
-        except tk.TclError:
-            pass
-        win.lift(par)
-        try:
             win.focus_force()
         except tk.TclError:
             pass
-        # Краткий topmost: вытащить поверх развёрнутого главного, затем обычный z-order.
-        def _clear_topmost() -> None:
+        self._fade_in_window(win)
+
+        def _settle() -> None:
             try:
-                if win.winfo_exists():
-                    win.attributes("-topmost", False)
-                    win.lift(par)
+                if not win.winfo_exists():
+                    return
+                win.attributes("-topmost", False)
+                win.lift(par)
             except tk.TclError:
                 pass
 
         try:
-            win.after(80, _clear_topmost)
+            win.after(120, _settle)
         except tk.TclError:
-            _clear_topmost()
+            _settle()
 
     def _release_modal(self, win: tk.Misc | None) -> None:
         if win is None:
@@ -691,6 +738,7 @@ class ProtocolApp(tk.Tk):
         try:
             if win.winfo_exists():
                 win.grab_release()
+                self._reset_window_alpha(win)
         except tk.TclError:
             pass
 
@@ -1414,6 +1462,7 @@ class ProtocolApp(tk.Tk):
         ttk.Button(bf, text="Закрыть", command=_on_close).pack(side=tk.RIGHT)
 
         win.protocol("WM_DELETE_WINDOW", _on_close)
+        self._fit_window_geometry(win, margin_x=40, margin_y=64, min_w=560, min_h=420)
         self._make_modal(win, parent=self._dialog_parent())
         self._register_clipboard_for_window(win)
 
@@ -1457,18 +1506,18 @@ class ProtocolApp(tk.Tk):
             self._setup_admin_window()
         if self._admin_win is None:
             return
+        win = self._admin_win
+        try:
+            win.withdraw()
+        except tk.TclError:
+            pass
         self._refresh_mintrud_registry_label(verify_access=True)
         self._refresh_employees_file_label()
         self._refresh_programs_file_label()
         self._refresh_technical_template_labels()
-        try:
-            self._admin_win.deiconify()
-            self._admin_win.state("normal")
-        except tk.TclError:
-            pass
-        self._fit_window_geometry(self._admin_win, margin_x=32, margin_y=56, min_w=520, min_h=420)
-        self._make_modal(self._admin_win)
-        self._register_clipboard_for_window(self._admin_win)
+        self._fit_window_geometry(win, margin_x=32, margin_y=56, min_w=520, min_h=420)
+        self._make_modal(win)
+        self._register_clipboard_for_window(win)
 
     def _close_admin_window(self) -> None:
         if self._admin_win is not None:
@@ -1501,15 +1550,17 @@ class ProtocolApp(tk.Tk):
     def _open_commission_window(self) -> None:
         maybe_warn_missing_morphology(self)
         if self._commission_win is not None and self._commission_win.winfo_exists():
-            self._commission_win.deiconify()
-            self._make_modal(self._commission_win)
-            self._register_clipboard_for_window(self._commission_win)
+            win = self._commission_win
+            try:
+                win.withdraw()
+            except tk.TclError:
+                pass
             if self._commission_panel is not None:
                 refresh_commission_pool_from_excel(
                     self._commission_state,
                     self._employees_file_resolved(),
                     show_errors=False,
-                    parent=self._commission_win,
+                    parent=win,
                 )
                 self._tech_commission_state.pool = self._commission_state.pool
                 self._commission_panel.refresh_pool_display()
@@ -1517,6 +1568,9 @@ class ProtocolApp(tk.Tk):
                 if self._tech_commission_panel is not None:
                     self._tech_commission_panel.refresh_pool_display()
                     self._tech_commission_panel.load_from_db_into_ui()
+            self._fit_window_geometry(win, margin_x=32, margin_y=56, min_w=560, min_h=640)
+            self._make_modal(win)
+            self._register_clipboard_for_window(win)
             return
 
         win = self._themed_toplevel()
@@ -1576,7 +1630,7 @@ class ProtocolApp(tk.Tk):
         bf.pack(fill=tk.X, pady=(10, 0))
         ttk.Button(bf, text="Закрыть", command=_on_close_commission).pack(side=tk.LEFT)
 
-        win.deiconify()
+        self._fit_window_geometry(win, margin_x=32, margin_y=56, min_w=560, min_h=640)
         self._make_modal(win)
         self._register_clipboard_for_window(win)
 
@@ -2590,7 +2644,12 @@ class ProtocolApp(tk.Tk):
                 "(например https://akot.rosmintrud.ru/ ).",
             )
             t.configure(state=tk.DISABLED)
-            ttk.Button(f, text="Закрыть", command=hw.destroy).pack(pady=(8, 0))
+            ttk.Button(f, text="Закрыть", command=lambda: self._close_modal_window(hw, parent=win)).pack(
+                pady=(8, 0)
+            )
+            hw.protocol("WM_DELETE_WINDOW", lambda: self._close_modal_window(hw, parent=win))
+            self._fit_window_geometry(hw, margin_x=24, margin_y=48, min_w=520, min_h=360)
+            self._make_modal(hw, parent=win)
 
         def export_template() -> None:
             sel = lb.curselection()
