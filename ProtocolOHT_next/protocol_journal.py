@@ -82,7 +82,7 @@ def save_protocol(
     *,
     protocol_kind: str = PROTOCOL_JOURNAL_KIND_OT,
 ) -> int:
-    """Сохранить запись журнала; при том же №/дате/виде/должности — обновить, не дублировать."""
+    """Сохранить запись журнала; при том же №/дате/виде/должности/ФИО — обновить, не дублировать."""
     kind = (protocol_kind or PROTOCOL_JOURNAL_KIND_OT).strip() or PROTOCOL_JOURNAL_KIND_OT
     with sqlite3.connect(database_path()) as conn:
         existing_id = _find_protocol_journal_id_for_update(
@@ -124,10 +124,11 @@ def _find_protocol_journal_id_for_update(
     export_meta_json: str | None,
     fio: str,
 ) -> int | None:
-    """Ключ перезаписи: вид + дата + № протокола + должность из meta; иначе вид + дата + ФИО."""
+    """Ключ перезаписи: вид + дата + № протокола + должность + ФИО; иначе вид + дата + ФИО."""
     kind = (protocol_kind or PROTOCOL_JOURNAL_KIND_OT).strip() or PROTOCOL_JOURNAL_KIND_OT
     date_s = (date or "").strip()
     pn = export_meta_protocol_no(export_meta_json)
+    nf = _norm_fio_journal_key(fio)
     if kind == PROTOCOL_JOURNAL_KIND_TECH:
         cur = conn.execute(
             """
@@ -150,11 +151,12 @@ def _find_protocol_journal_id_for_update(
         for rid, row_fio, meta in rows:
             if export_meta_protocol_no(meta) != pn:
                 continue
+            if nf and _norm_fio_journal_key(row_fio or "") != nf:
+                continue
             existing_pos = export_meta_journal_position_key(meta, row_fio or "")
             if existing_pos == pos_key:
                 return int(rid)
         return None
-    nf = _norm_fio_journal_key(fio)
     if nf:
         for rid, row_fio, _meta in rows:
             if _norm_fio_journal_key(row_fio or "") == nf:
@@ -172,7 +174,8 @@ def _journal_row_dedupe_key(record: dict[str, Any]) -> tuple[str, str, str]:
             record.get("export_meta_json"),
             record.get("fio") or "",
         )
-        return (kind, date_s, f"no:{pn.casefold()}:{pos}")
+        nf = _norm_fio_journal_key(record.get("fio") or "")
+        return (kind, date_s, f"no:{pn.casefold()}:{pos}:{nf}")
     nf = _norm_fio_journal_key(record.get("fio") or "")
     return (kind, date_s, f"fio:{nf}")
 

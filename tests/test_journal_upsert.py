@@ -126,6 +126,46 @@ class TestJournalUpsert(unittest.TestCase):
         topics = sorted((r.get("topic") or "") for r in rows)
         self.assertEqual(topics, ["Базовая — слесарь", "Базовая — электрик"])
 
+    def test_save_protocol_new_row_same_number_profession_different_fio(self) -> None:
+        """Один № и должность, разные ФИО — две записи (не перезаписывать чужую)."""
+        meta1 = build_protocol_export_meta_json(
+            ["B"],
+            ["Базовая"],
+            protocol_no_formatted="8-06-2026",
+            persons_raw=[EmployeeRecord(fio="Иванов И.И.", profession="Слесарь")],
+            face_sheet_profession="Слесарь",
+        )
+        id1 = save_protocol(
+            "Иванов И.И.",
+            "Базовая",
+            "09.06.2026",
+            "удовлетворительно",
+            "",
+            export_meta_json=meta1,
+            protocol_kind=PROTOCOL_JOURNAL_KIND_OT,
+        )
+        meta2 = build_protocol_export_meta_json(
+            ["B"],
+            ["Базовая"],
+            protocol_no_formatted="8-06-2026",
+            persons_raw=[EmployeeRecord(fio="Петров П.П.", profession="Слесарь")],
+            face_sheet_profession="Слесарь",
+        )
+        id2 = save_protocol(
+            "Петров П.П.",
+            "Базовая",
+            "09.06.2026",
+            "удовлетворительно",
+            "",
+            export_meta_json=meta2,
+            protocol_kind=PROTOCOL_JOURNAL_KIND_OT,
+        )
+        self.assertNotEqual(id1, id2)
+        rows = get_all_protocols(PROTOCOL_JOURNAL_KIND_OT)
+        self.assertEqual(len(rows), 2)
+        fios = sorted((r.get("fio") or "") for r in rows)
+        self.assertEqual(fios, ["Иванов И.И.", "Петров П.П."])
+
     def test_dedupe_keeps_distinct_profession_same_protocol_no(self) -> None:
         meta1 = build_protocol_export_meta_json(
             ["B"],
@@ -194,6 +234,7 @@ class TestJournalUpsert(unittest.TestCase):
             ["B"],
             ["Базовая"],
             protocol_no_formatted="2-06-2026",
+            face_sheet_profession="Слесарь",
         )
         import sqlite3
 
@@ -203,7 +244,7 @@ class TestJournalUpsert(unittest.TestCase):
                 INSERT INTO protocols (fio, topic, date, grade, content, export_meta_json, protocol_kind)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                ("Иванов", "старая", "09.06.2026", "удовлетворительно", "", meta, PROTOCOL_JOURNAL_KIND_OT),
+                ("Иванов И.И.", "старая", "09.06.2026", "удовлетворительно", "", meta, PROTOCOL_JOURNAL_KIND_OT),
             )
             conn.commit()
         save_protocol(
@@ -224,6 +265,7 @@ class TestJournalUpsert(unittest.TestCase):
             ["B"],
             ["Базовая"],
             protocol_no_formatted="1-06-2026",
+            face_sheet_profession="Слесарь",
         )
         import sqlite3
 
@@ -234,7 +276,7 @@ class TestJournalUpsert(unittest.TestCase):
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    "Иванов",
+                    "Иванов И.И.",
                     "старая",
                     "09.06.2026",
                     "удовлетворительно",
