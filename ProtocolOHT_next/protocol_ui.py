@@ -7,9 +7,10 @@ import os
 import sqlite3
 import sys
 import traceback
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import tkinter as tk
 import tkinter.font as tkfont
@@ -1251,11 +1252,12 @@ class ProtocolApp(tk.Tk):
             style="Accent.TButton",
         )
         self.btn_generate.grid(row=0, column=0, sticky=tk.EW, padx=(0, 6), pady=(0, 4))
-        ttk.Button(
+        self.btn_generate_folder = ttk.Button(
             bottom_lf,
             text="По одному на каждого → в папку…",
             command=self.generate_protocol_per_employee_to_folder,
-        ).grid(row=0, column=1, sticky=tk.EW, padx=(0, 6), pady=(0, 4))
+        )
+        self.btn_generate_folder.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6), pady=(0, 4))
         self.btn_refresh_mintrud_registry = ttk.Button(
             bottom_lf,
             text="Обновить из реестра Минтруд",
@@ -3427,7 +3429,61 @@ class ProtocolApp(tk.Tk):
             except tk.TclError:
                 pass
 
+    @contextmanager
+    def _generation_busy(self, message: str) -> Iterator[None]:
+        """Курсор ожидания, статус и блокировка кнопок на время тяжёлой операции (без фонового потока)."""
+        prev_status = self._status_var.get() if hasattr(self, "_status_var") else ""
+        widgets: list[tuple[ttk.Widget, str]] = []
+        for name in (
+            "btn_generate",
+            "btn_generate_folder",
+            "btn_save",
+            "btn_save_pdf",
+            "btn_refresh_mintrud_registry",
+        ):
+            w = getattr(self, name, None)
+            if w is None:
+                continue
+            try:
+                st = str(w.cget("state"))
+            except tk.TclError:
+                st = "!disabled"
+            widgets.append((w, st))
+            try:
+                w.state(["disabled"])
+            except tk.TclError:
+                pass
+        try:
+            self.configure(cursor="watch")
+        except tk.TclError:
+            pass
+        if hasattr(self, "_status_var"):
+            self._status_var.set(message)
+        self.update_idletasks()
+        try:
+            yield
+        finally:
+            try:
+                self.configure(cursor="")
+            except tk.TclError:
+                pass
+            for w, st in widgets:
+                try:
+                    if st in ("disabled", "Disabled"):
+                        w.state(["disabled"])
+                    else:
+                        w.state(["!disabled"])
+                except tk.TclError:
+                    pass
+            if hasattr(self, "_status_var"):
+                self._status_var.set(prev_status)
+                self._sync_status_bar()
+
     def generate_protocol(self) -> None:
+        with self._generation_busy("Формирование протокола…"):
+            self._generate_protocol_body()
+
+    def _generate_protocol_body(self) -> None:
         maybe_warn_missing_morphology(self)
         theme = self.entry_theme.get().strip()
         date_str = self.entry_date.get().strip()
@@ -3562,6 +3618,10 @@ class ProtocolApp(tk.Tk):
             )
 
     def generate_protocol_per_employee_to_folder(self) -> None:
+        with self._generation_busy("Формирование файлов по сотрудникам…"):
+            self._generate_protocol_per_employee_to_folder_body()
+
+    def _generate_protocol_per_employee_to_folder_body(self) -> None:
         theme = self.entry_theme.get().strip()
         date_str = self.entry_date.get().strip()
         registry_no = self.entry_registry_no.get().strip()
@@ -3678,8 +3738,11 @@ class ProtocolApp(tk.Tk):
         table_warn = False
         journal_db_errors: list[str] = []
         raw_selection_b = self._collect_table_persons()
+        total_emp = len(persons_raw)
 
         for i, emp in enumerate(persons_raw):
+            self._status_var.set(f"Формирование файлов: {i + 1}/{total_emp}…")
+            self.update_idletasks()
             n = base_no + i
             protocol_no = str(n)
             last_no_str = protocol_no
@@ -3837,6 +3900,16 @@ class ProtocolApp(tk.Tk):
         if not path:
             return
 
+        with self._generation_busy("Сохранение PDF…"):
+            self._save_to_pdf_body(path, content, protocol_no, date_str)
+
+    def _save_to_pdf_body(
+        self,
+        path: str,
+        content: str,
+        protocol_no: str,
+        date_str: str,
+    ) -> None:
         tpl = self._active_protocol_template_path()
         is_docx_tpl = is_word_protocol_template(tpl)
         theme = self.entry_theme.get().strip()
