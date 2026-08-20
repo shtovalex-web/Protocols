@@ -2296,10 +2296,17 @@ def _apply_commission_paragraph_replacement(
     members_gen: str,
     chair_gen: str = "",
 ) -> None:
-    if members_gen and _line_inserts_commission_members(orig_line, new_text):
+    has_members = bool(members_gen) and _line_inserts_commission_members(orig_line, new_text)
+    has_chair = bool(chair_gen) and _line_inserts_commission_chair(orig_line, new_text, chair_gen)
+    # В одном абзаце и «председателя», и «членов» — сохраняем полный текст вставки,
+    # иначе оформление только «членов» затирает председателя.
+    if has_members and has_chair:
+        _replace_paragraph_text_preserve_style_multiline(paragraph, new_text)
+        return
+    if has_members:
         _replace_paragraph_commission_members(paragraph, orig_line, members_gen)
         return
-    if chair_gen and _line_inserts_commission_chair(orig_line, new_text, chair_gen):
+    if has_chair:
         _replace_paragraph_commission_chair(paragraph, orig_line, chair_gen)
         return
     if "\n" in new_text:

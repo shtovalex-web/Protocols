@@ -15,6 +15,38 @@ _morph_analyzer: Any = None
 _morph_backend: str | None = None
 _morph_failed: bool = False
 
+# После этих предлогов остаток фразы не склоняем (типично для должностей:
+# «инженер по охране труда» → «инженера по охране труда»).
+_PREPOSITIONS = frozenset(
+    {
+        "по",
+        "в",
+        "во",
+        "на",
+        "о",
+        "об",
+        "обо",
+        "от",
+        "до",
+        "для",
+        "при",
+        "с",
+        "со",
+        "к",
+        "ко",
+        "у",
+        "из",
+        "без",
+        "над",
+        "под",
+        "перед",
+        "между",
+        "через",
+        "про",
+        "за",
+    }
+)
+
 
 def morph_backend_name() -> str:
     """Имя активного бэкенда: pymorphy3 | pymorphy2 | none."""
@@ -93,10 +125,85 @@ def _restore_case(original: str, inflected: str) -> str:
     return inflected
 
 
-def phrase_to_genitive_russian(phrase: str) -> str:
+def _tag_has(tag: Any, key: str) -> bool:
+    try:
+        return key in tag
+    except Exception:
+        return False
+
+
+def _detect_fio_gender(morph: Any, phrase: str) -> str | None:
+    """Определить пол по имени/отчеству в ФИО: 'femn' | 'masc' | None."""
+    for part in re.split(r"\s+", (phrase or "").strip()):
+        if not part:
+            continue
+        _lead, mid, _trail = _strip_edges_punct(part)
+        if _skip_word_for_inflect(mid) or "-" in mid:
+            continue
+        for p in morph.parse(mid)[:4]:
+            if not (_tag_has(p.tag, "Name") or _tag_has(p.tag, "Patr")):
+                continue
+            if _tag_has(p.tag, "femn"):
+                return "femn"
+            if _tag_has(p.tag, "masc"):
+                return "masc"
+    return None
+
+
+def _pick_parse(morph: Any, mid: str, *, gender: str | None) -> Any | None:
+    parsed = morph.parse(mid)
+    if not parsed:
+        return None
+    if gender == "femn":
+        for p in parsed:
+            if _tag_has(p.tag, "femn") and _tag_has(p.tag, "Surn"):
+                return p
+        for p in parsed:
+            if _tag_has(p.tag, "femn"):
+                return p
+    elif gender == "masc":
+        for p in parsed:
+            if _tag_has(p.tag, "masc") and _tag_has(p.tag, "Surn"):
+                return p
+        for p in parsed:
+            if _tag_has(p.tag, "masc") and (
+                _tag_has(p.tag, "Name") or _tag_has(p.tag, "Patr") or _tag_has(p.tag, "Surn")
+            ):
+                return p
+    return parsed[0]
+
+
+def _inflect_token_to_genitive(morph: Any, mid: str, *, gender: str | None) -> str:
+    if "-" in mid:
+        parts = mid.split("-")
+        out_parts: list[str] = []
+        for part in parts:
+            if not part:
+                out_parts.append(part)
+                continue
+            out_parts.append(_inflect_simple_word(morph, part, gender=gender))
+        return "-".join(out_parts)
+    return _inflect_simple_word(morph, mid, gender=gender)
+
+
+def _inflect_simple_word(morph: Any, mid: str, *, gender: str | None) -> str:
+    parsed = _pick_parse(morph, mid, gender=gender)
+    if parsed is None:
+        return mid
+    inf = parsed.inflect({"gent"})
+    if not inf:
+        return mid
+    return _restore_case(mid, inf.word)
+
+
+def phrase_to_genitive_russian(phrase: str, *, gender: str | None = None) -> str:
     """
     По «словам» (фрагменты между пробелами) — родительный падеж.
     Без морфологического пакета возвращает исходную строку.
+
+    gender: подсказка пола для фамилий ('femn'/'masc'); если None — определяется
+    по имени/отчеству в этой же фразе (если есть).
+    После предлога (по, в, на, …) остальные слова не склоняются.
     """
     phrase = (phrase or "").strip()
     if not phrase:
@@ -105,7 +212,10 @@ def phrase_to_genitive_russian(phrase: str) -> str:
     if morph is None:
         return phrase
 
+    hint = gender if gender in ("femn", "masc") else _detect_fio_gender(morph, phrase)
+
     out: list[str] = []
+    stop_inflect = False
     for part in re.split(r"(\s+)", phrase):
         if not part:
             continue
@@ -113,18 +223,14 @@ def phrase_to_genitive_russian(phrase: str) -> str:
             out.append(part)
             continue
         lead, mid, trail = _strip_edges_punct(part)
-        if _skip_word_for_inflect(mid):
+        if stop_inflect or _skip_word_for_inflect(mid):
             out.append(part)
             continue
-        parsed = morph.parse(mid)
-        if not parsed:
+        if mid.casefold() in _PREPOSITIONS:
             out.append(part)
+            stop_inflect = True
             continue
-        inf = parsed[0].inflect({"gent"})
-        if not inf:
-            out.append(part)
-            continue
-        w = _restore_case(mid, inf.word)
+        w = _inflect_token_to_genitive(morph, mid, gender=hint)
         out.append(f"{lead}{w}{trail}")
     return "".join(out)
 
@@ -133,8 +239,11 @@ def format_person_fio_profession_genitive(fio: str, profession: str) -> str:
     """Строка для шапки протокола: «ФИО, должность» в родительном падеже."""
     f = (fio or "").strip()
     p = (profession or "").strip()
-    fg = phrase_to_genitive_russian(f) if f else ""
-    pg = phrase_to_genitive_russian(p) if p else ""
+    morph = _get_morph()
+    gender = _detect_fio_gender(morph, f) if morph is not None and f else None
+    fg = phrase_to_genitive_russian(f, gender=gender) if f else ""
+    # Должность склоняем без подсказки пола ФИО (иначе «слесарь» может поехать).
+    pg = phrase_to_genitive_russian(p, gender=None) if p else ""
     if fg and pg:
         return f"{fg}, {pg}"
     return fg or pg
